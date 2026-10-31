@@ -904,8 +904,11 @@ int main(void)
                     selected = 0;
                     page = SETTINGS;
                 }
-                else if (selected == 6 && advancedUnlocked)
-                    page = ADVANCED;
+                else if (selected == 6)
+                {
+                    scanPlugins();
+                    page = PLUGINS;
+                }
                 else if (selected == 7)
                     page = ABOUT;
                 else if (selected == 8)
@@ -914,7 +917,7 @@ int main(void)
                     page = MUSIC;
                 }
                 else
-                    statusSet("Hold L + R + X + Y to unlock Advanced Tools.");
+                    statusSet("Select an app to open it.");
 
                 if (page == THEMES) selected = themeIndex;
                 else if (page != SETTINGS) selected = 0;
