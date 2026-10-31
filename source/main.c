@@ -42,7 +42,8 @@ typedef enum
     ADVANCED,
     PLUGINS,
     PLUGIN_DETAILS,
-    RESET_CONFIRM
+    RESET_CONFIRM,
+    MUSIC
 } Page;
 
 static const Theme themes[] = {
@@ -64,6 +65,13 @@ static int selected;
 static int scroll;
 static int themeIndex;
 static int hints = 1;
+static int darkMode = 1;
+static int musicCount;
+static int musicPlaying;
+static int musicPaused;
+static char musicFiles[128][256];
+static void *musicData;
+static ndspWaveBuf musicWave;
 static int advancedUnlocked;
 static int running = 1;
 static int dirty = 1;
@@ -92,13 +100,18 @@ static const char *homeLabels[] = {
     "[SYS] System Dashboard",
     "[SET] Settings",
     "[ADV] Advanced Tools",
-    "[i]   About CINTENDO"
+    "[i]   About CINTENDO",
+    "[♫]   CINTENDO Music"
 };
 
 
 static void statusSet(const char *value);
 static void ensureFolders(void);
 static int hasExtension(const char *name, const char *extension);
+static void scanMusic(void);
+static void drawMusic(void);
+static void stopMusic(void);
+static int playMusicFile(const char *name);
 
 static int validPluginId(const char *id)
 {
@@ -218,6 +231,7 @@ static void resetCintendo(void)
     }
     themeIndex = 0;
     hints = 1;
+    darkMode = 1;
     advancedUnlocked = 0;
     selected = 0;
     scroll = 0;
@@ -299,9 +313,119 @@ static void drawPluginDetails(void)
     printf("\n  B: Back");
     footer();
 }
-\nstatic void statusSet(const char *value);
+
+static void statusSet(const char *value);
 static void ensureFolders(void);
 static int hasExtension(const char *name, const char *extension);
+
+static u16 musicRead16(const unsigned char *p)
+{
+    return (u16)(p[0] | ((u16)p[1] << 8));
+}
+
+static u32 musicRead32(const unsigned char *p)
+{
+    return (u32)p[0] | ((u32)p[1] << 8) | ((u32)p[2] << 16) | ((u32)p[3] << 24);
+}
+
+static void stopMusic(void)
+{
+    ndspChnReset(0);
+    if (musicData) { linearFree(musicData); musicData = NULL; }
+    musicPlaying = 0;
+    musicPaused = 0;
+}
+
+static int playMusicFile(const char *name)
+{
+    char full[PATH_SIZE];
+    if (snprintf(full, sizeof(full), "sdmc:/3ds/CINTENDO/Music/%s", name) >= (int)sizeof(full)) return 0;
+    FILE *file = fopen(full, "rb");
+    if (!file) return 0;
+    if (fseek(file, 0, SEEK_END) != 0) { fclose(file); return 0; }
+    long length = ftell(file);
+    if (length < 44 || length > 8 * 1024 * 1024) { fclose(file); return 0; }
+    rewind(file);
+    unsigned char *bytes = malloc((size_t)length);
+    if (!bytes) { fclose(file); return 0; }
+    if (fread(bytes, 1, (size_t)length, file) != (size_t)length) { free(bytes); fclose(file); return 0; }
+    fclose(file);
+    if (memcmp(bytes, "RIFF", 4) || memcmp(bytes + 8, "WAVE", 4)) { free(bytes); return 0; }
+    u16 format = 0, channels = 0, bits = 0;
+    u32 rate = 0, dataSize = 0;
+    unsigned char *data = NULL;
+    for (u32 offset = 12; offset + 8 <= (u32)length;)
+    {
+        u32 chunkSize = musicRead32(bytes + offset + 4);
+        u32 chunkData = offset + 8;
+        if (chunkData + chunkSize > (u32)length) break;
+        if (!memcmp(bytes + offset, "fmt ", 4) && chunkSize >= 16)
+        {
+            format = musicRead16(bytes + chunkData);
+            channels = musicRead16(bytes + chunkData + 2);
+            rate = musicRead32(bytes + chunkData + 4);
+            bits = musicRead16(bytes + chunkData + 14);
+        }
+        else if (!memcmp(bytes + offset, "data", 4)) { data = bytes + chunkData; dataSize = chunkSize; }
+        offset = chunkData + chunkSize + (chunkSize & 1);
+    }
+    if (format != 1 || !data || !rate || (channels != 1 && channels != 2) || (bits != 8 && bits != 16))
+    {
+        free(bytes);
+        return 0;
+    }
+    u32 samples = dataSize / (channels * (bits / 8));
+    if (!samples) { free(bytes); return 0; }
+    stopMusic();
+    musicData = linearAlloc(dataSize);
+    if (!musicData) { free(bytes); return 0; }
+    memcpy(musicData, data, dataSize);
+    free(bytes);
+    memset(&musicWave, 0, sizeof(musicWave));
+    musicWave.data_vaddr = musicData;
+    musicWave.nsamples = samples;
+    musicWave.looping = false;
+    ndspChnSetInterp(0, NDSP_INTERP_LINEAR);
+    ndspChnSetRate(0, (float)rate);
+    ndspChnSetFormat(0, channels == 1 ? (bits == 8 ? NDSP_FORMAT_MONO_PCM8 : NDSP_FORMAT_MONO_PCM16) : (bits == 8 ? NDSP_FORMAT_STEREO_PCM8 : NDSP_FORMAT_STEREO_PCM16));
+    ndspChnSetPaused(0, false);
+    ndspChnWaveBufAdd(0, &musicWave);
+    musicPlaying = 1;
+    musicPaused = 0;
+    return 1;
+}
+
+static void scanMusic(void)
+{
+    DIR *dir = opendir("sdmc:/3ds/CINTENDO/Music");
+    musicCount = 0;
+    if (!dir) return;
+    struct dirent *item;
+    while ((item = readdir(dir)) && musicCount < 128)
+        if (hasExtension(item->d_name, ".wav"))
+            snprintf(musicFiles[musicCount++], sizeof(musicFiles[0]), "%s", item->d_name);
+    closedir(dir);
+    selected = 0;
+    scroll = 0;
+}
+
+static void drawMusic(void)
+{
+    consoleSelect(&top);
+    consoleClear();
+    header("CINTENDO MUSIC");
+    printf("\n  Local music library\n  sdmc:/3ds/CINTENDO/Music/\n\n");
+    for (int i = 0; i < musicCount && i < 14; i++)
+        printf("%s %s\n", selected == i ? ">" : " ", musicFiles[i]);
+    if (!musicCount) printf("  No WAV files found.\n");
+    consoleSelect(&bottom);
+    consoleClear();
+    header("PLAYER");
+    printf("  Status: %s\n", !musicPlaying ? "Stopped" : musicPaused ? "Paused" : "Playing");
+    printf("\n  A: Play selected\n  X: Pause / resume\n  Y: Stop\n  B: Home\n\n");
+    printf("  PCM WAV only: 8/16-bit, mono/stereo\n  Maximum file size: 8 MB");
+    footer();
+}
 
 static void statusSet(const char *value)
 {
@@ -315,6 +439,7 @@ static void ensureFolders(void)
     mkdir("sdmc:/3ds/CINTENDO/SaveVault", 0777);
     mkdir("sdmc:/3ds/CINTENDO/Plugins", 0777);
     mkdir("sdmc:/3ds/CINTENDO/PluginInstall", 0777);
+    mkdir("sdmc:/3ds/CINTENDO/Music", 0777);
 }
 
 static void settingsLoad(void)
@@ -325,11 +450,14 @@ static void settingsLoad(void)
 
     int savedTheme = 0;
     int savedHints = 1;
-    if (fscanf(file, "%d %d", &savedTheme, &savedHints) == 2)
+    int savedDarkMode = 1;
+    int fields = fscanf(file, "%d %d %d", &savedTheme, &savedHints, &savedDarkMode);
+    if (fields >= 2)
     {
         if (savedTheme >= 0 && savedTheme < (int)(sizeof(themes) / sizeof(themes[0])))
             themeIndex = savedTheme;
         hints = savedHints ? 1 : 0;
+        darkMode = fields >= 3 ? (savedDarkMode ? 1 : 0) : 1;
     }
     fclose(file);
 }
@@ -343,7 +471,7 @@ static void settingsSave(void)
         statusSet("Could not save settings.");
         return;
     }
-    fprintf(file, "%d %d\n", themeIndex, hints);
+    fprintf(file, "%d %d %d\n", themeIndex, hints, darkMode);
     fclose(file);
     statusSet("Settings saved to SD card.");
 }
@@ -436,7 +564,7 @@ static void drawHome(void)
     printf("\n");
     printf("%sYour 3DS. Your way.%s\n", themes[themeIndex].accent, reset);
     printf("%s%s%s\n\n", themes[themeIndex].secondary, themes[themeIndex].tagline, reset);
-    for (int i = 0; i < 8; i++)
+    for (int i = 0; i < 9; i++)
         printf("%s %s%s%s\n", selected == i ? ">" : " ",
                selected == i ? themes[themeIndex].primary : reset,
                homeLabels[i], reset);
@@ -512,12 +640,14 @@ static void drawSettings(void)
     header("SETTINGS");
     printf("\n%s %sControl hints: %s%s\n", selected == 0 ? ">" : " ",
            themes[themeIndex].primary, hints ? "ON" : "OFF", reset);
-    printf("%s Theme: %s%s\n", selected == 1 ? ">" : " ",
+    printf("%s Dark Mode: %s\n", selected == 1 ? ">" : " ", darkMode ? "ON" : "OFF");
+    printf("%s Theme: %s%s\n", selected == 2 ? ">" : " ",
            themes[themeIndex].primary, themes[themeIndex].name);
     printf("\n  Select a row and press A.\n");
     consoleSelect(&bottom);
     consoleClear();
     header("PREFERENCES");
+    printf("  Dark Mode is enabled by default.\n");
     printf("  Theme settings open Theme Studio.\n");
     printf("  Your choices persist after restart.\n");
     printf("\n  B: Home");
@@ -675,6 +805,7 @@ static void drawAdvanced(void)
 static void draw(void)
 {
     if (page == HOME) drawHome();
+    else if (page == MUSIC) drawMusic();
     else if (page == FILES) drawList(0);
     else if (page == APPS) drawList(1);
     else if (page == VAULT) drawVault();
@@ -808,10 +939,12 @@ static int copyToVault(const char *source)
 int main(void)
 {
     gfxInitDefault();
+    ndspInit();
     consoleInit(GFX_TOP, &top);
     consoleInit(GFX_BOTTOM, &bottom);
     ensureFolders();
-    settingsLoad();\n    scanPlugins();
+    settingsLoad();
+    scanPlugins();
 
     while (aptMainLoop() && running)
     {
@@ -835,8 +968,8 @@ int main(void)
 
         if (page == HOME)
         {
-            if (keys & KEY_UP) { move(-1, 8); dirty = 1; }
-            if (keys & KEY_DOWN) { move(1, 8); dirty = 1; }
+            if (keys & KEY_UP) { move(-1, 9); dirty = 1; }
+            if (keys & KEY_DOWN) { move(1, 9); dirty = 1; }
             if (keys & KEY_A)
             {
                 if (selected == 0)
@@ -866,6 +999,11 @@ int main(void)
                     page = ADVANCED;
                 else if (selected == 7)
                     page = ABOUT;
+                else if (selected == 8)
+                {
+                    scanMusic();
+                    page = MUSIC;
+                }
                 else
                     statusSet("Hold L + R + X + Y to unlock Advanced Tools.");
 
@@ -894,6 +1032,24 @@ int main(void)
                 dirty = 1;
             }
         }
+        else if (page == MUSIC)
+        {
+            if (keys & KEY_UP) { move(-1, musicCount); dirty = 1; }
+            if (keys & KEY_DOWN) { move(1, musicCount); dirty = 1; }
+            if ((keys & KEY_A) && musicCount > 0)
+            {
+                if (playMusicFile(musicFiles[selected])) statusSet("Playing WAV audio.");
+                else statusSet("Unsupported WAV. Use PCM 8/16-bit mono/stereo.");
+                dirty = 1;
+            }
+            if (keys & KEY_X)
+            {
+                if (musicPlaying) { musicPaused = !musicPaused; ndspChnSetPaused(0, musicPaused); }
+                dirty = 1;
+            }
+            if (keys & KEY_Y) { stopMusic(); dirty = 1; }
+            if (keys & KEY_B) { page = HOME; selected = 0; dirty = 1; }
+        }
         else if (page == DETAILS)
         {
             if (keys & KEY_X)
@@ -912,12 +1068,14 @@ int main(void)
         }
         else if (page == SETTINGS)
         {
-            if (keys & KEY_UP) { selected = (selected + 1) % 2; dirty = 1; }
-            if (keys & KEY_DOWN) { selected = (selected + 1) % 2; dirty = 1; }
+            if (keys & KEY_UP) { selected = (selected + 2) % 3; dirty = 1; }
+            if (keys & KEY_DOWN) { selected = (selected + 1) % 3; dirty = 1; }
             if (keys & KEY_A)
             {
                 if (selected == 0)
                     hints = !hints;
+                else if (selected == 1)
+                    darkMode = !darkMode;
                 else
                 {
                     page = THEMES;
@@ -1010,6 +1168,8 @@ int main(void)
         gspWaitForVBlank();
     }
 
+    stopMusic();
+    ndspExit();
     gfxExit();
     return 0;
 }
