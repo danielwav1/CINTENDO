@@ -953,11 +953,49 @@ int main(void)
             if (keys & KEY_B) { page = HOME; selected = 0; dirty = 1; }
             if (page == ADVANCED && (keys & KEY_A))
             {
-                snprintf(path, sizeof(path), "sdmc:/3ds/CINTENDO");
-                scan(path, 0);
-                page = FILES;
+                page = PLUGINS;
+                selected = 0;
                 dirty = 1;
             }
+            if (page == ADVANCED && (keys & KEY_Y))
+            {
+                page = RESET_CONFIRM;
+                dirty = 1;
+            }
+        }
+        else if (page == PLUGINS)
+        {
+            scanPlugins();
+            if (keys & KEY_UP) { move(-1, pluginCount); dirty = 1; }
+            if (keys & KEY_DOWN) { move(1, pluginCount); dirty = 1; }
+            if ((keys & KEY_A) && pluginCount > 0 && selected < pluginCount)
+            {
+                activePlugin = plugins[selected];
+                page = PLUGIN_DETAILS;
+                dirty = 1;
+            }
+            if (keys & KEY_Y)
+            {
+                int n = installPluginsFromSD();
+                snprintf(status, sizeof(status), "%d plugin package(s) installed.", n);
+                selected = 0;
+                dirty = 1;
+            }
+            if (keys & KEY_B) { page = ADVANCED; selected = 0; dirty = 1; }
+        }
+        else if (page == PLUGIN_DETAILS)
+        {
+            if (keys & KEY_B) { page = PLUGINS; dirty = 1; }
+        }
+        else if (page == RESET_CONFIRM)
+        {
+            if (keys & KEY_Y)
+            {
+                resetCintendo();
+                page = ADVANCED;
+                dirty = 1;
+            }
+            if (keys & KEY_B) { page = ADVANCED; dirty = 1; }
         }
 
         if (dirty)
