@@ -1,0 +1,5 @@
+CINTENDO_SCRIPT_V1
+id=theme-next
+name=Theme Next
+description=Switch to the next CINTENDO theme preset.
+action=THEME_NEXT
