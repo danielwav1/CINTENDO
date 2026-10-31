@@ -818,7 +818,7 @@ static void drawGraphicalPage(void)
     const char *line1 = "A  Select";
     const char *line2 = "B  Back";
     const char *line3 = "Made by danielwav1";
-    uiFrame("CONTROL CENTER");
+    uiFrame("");
 
     if (page == SETTINGS)
     {
@@ -932,7 +932,7 @@ static void drawGraphicalPage(void)
     else if (page == MUSIC)
     {
         section = "CINTENDO MUSIC";
-        for (int i = 0; i < musicCount && i < 6; i++) uiCard(17, 43 + i * 29, 366, 25, "♫", musicFiles[i], "PCM WAV", selected == i, uiAccent());
+        for (int i = 0; i < musicCount && i < 6; i++) uiCard(17, 43 + i * 29, 366, 25, "MUS", musicFiles[i], "PCM WAV", selected == i, uiAccent());
         if (!musicCount) uiCard(25, 80, 350, 55, "M", "Music library is empty", "Add PCM WAV files to CINTENDO/Music", 1, 0xFFE29A36);
         bottomTitle = musicPlaying ? musicPaused ? "PLAYER PAUSED" : "PLAYER PLAYING" : "PLAYER STOPPED";
         line1 = "A  Play selected WAV";
@@ -941,6 +941,7 @@ static void drawGraphicalPage(void)
     }
 
     if (section[0]) {
+        launcherTextDraw(section, 319, 11, 0.39f);
         C2D_SceneBegin(GFX_BOTTOM);
         C2D_DrawRectSolid(0, 0, 0, 320, 240, 0, 0xFF101622);
         uiRect(12, 12, 296, 43, 0xFF202A3B);
