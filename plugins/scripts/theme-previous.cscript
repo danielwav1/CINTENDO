@@ -1,0 +1,5 @@
+CINTENDO_SCRIPT_V1
+id=theme-previous
+name=Theme Previous
+description=Switch to the previous CINTENDO theme preset.
+action=THEME_PREVIOUS
