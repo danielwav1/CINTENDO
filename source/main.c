@@ -18,19 +18,22 @@ int main(int argc, char* argv[])
 		hidScanInput();
 
 		// Your code goes here
-		
+
 #include <3ds.h>
 #include <stdio.h>
-#include <string.h>
 
 int main(void)
 {
     gfxInitDefault();
 
-    consoleInit(GFX_TOP, NULL);
-    consoleInit(GFX_BOTTOM, NULL);
+    PrintConsole topScreen;
+    PrintConsole bottomScreen;
+
+    consoleInit(GFX_TOP, &topScreen);
+    consoleInit(GFX_BOTTOM, &bottomScreen);
 
     int selected = 0;
+
     const char *items[] = {
         "Applications",
         "Files",
@@ -54,7 +57,7 @@ int main(void)
         if (kDown & KEY_START)
             break;
 
-        consoleSelect(GFX_TOP);
+        consoleSelect(&topScreen);
         consoleClear();
 
         printf("\x1b[2;12HCINTENDO");
@@ -68,7 +71,7 @@ int main(void)
                 items[i]);
         }
 
-        consoleSelect(GFX_BOTTOM);
+        consoleSelect(&bottomScreen);
         consoleClear();
 
         printf("\x1b[3;4HCINTENDO SYSTEM");
