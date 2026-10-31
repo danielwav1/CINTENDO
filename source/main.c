@@ -39,7 +39,10 @@ typedef enum
     THEMES,
     ABOUT,
     DETAILS,
-    ADVANCED
+    ADVANCED,
+    PLUGINS,
+    PLUGIN_DETAILS,
+    RESET_CONFIRM
 } Page;
 
 static const Theme themes[] = {
@@ -70,6 +73,16 @@ static Page previousPage = FILES;
 static char path[PATH_SIZE] = "sdmc:/";
 static char detail[PATH_SIZE];
 static char status[100] = "Welcome to CINTENDO.";
+typedef struct
+{
+    char filename[256];
+    char id[48];
+    char name[96];
+    char description[160];
+} Plugin;
+static Plugin plugins[32];
+static int pluginCount;
+static Plugin activePlugin;
 
 static const char *homeLabels[] = {
     "[FM]  File Manager",
@@ -82,7 +95,207 @@ static const char *homeLabels[] = {
     "[i]   About CINTENDO"
 };
 
-static void statusSet(const char *value)
+
+static int validPluginId(const char *id)
+{
+    static const char *allowed[] = {"battery","clock","storage","vault","filetypes","config","theme","folders","sdcheck","about"};
+    for (int i = 0;i < 10;i++)
+        if (strcmp(id, allowed[i]) == 0)
+            return 1;
+    return 0;
+}
+
+static int loadPluginFile(const char *full, Plugin *plugin)
+{
+    FILE *file = fopen(full, "r");
+    if (!file)
+        return 0;
+    char line[256];
+    int header = 0;
+    memset(plugin, 0, sizeof(*plugin));
+    while (fgets(line, sizeof(line), file))
+    {
+        line[strcspn(line, "\\r\\n")] = 0;
+        if (strcmp(line, "CINTENDO_PLUGIN_V1") == 0)
+            header = 1;
+        else if (strncmp(line, "id=", 3) == 0)
+            snprintf(plugin->id, sizeof(plugin->id), "%s", line + 3);
+        else if (strncmp(line, "name=", 5) == 0)
+            snprintf(plugin->name, sizeof(plugin->name), "%s", line + 5);
+        else if (strncmp(line, "description=", 12) == 0)
+            snprintf(plugin->description, sizeof(plugin->description), "%s", line + 12);
+    }
+    fclose(file);
+    return header && validPluginId(plugin->id) && plugin->name[0] && plugin->description[0];
+}
+
+static void scanPlugins(void)
+{
+    DIR *dir = opendir("sdmc:/3ds/CINTENDO/Plugins");
+    pluginCount = 0;
+    if (!dir)
+        return;
+    struct dirent *item;
+    while ((item = readdir(dir)) && pluginCount < 32)
+    {
+        if (!hasExtension(item->d_name, ".cplug"))
+            continue;
+        char full[PATH_SIZE];
+        if (snprintf(full, sizeof(full), "sdmc:/3ds/CINTENDO/Plugins/%s", item->d_name) >= (int)sizeof(full))
+            continue;
+        Plugin candidate;
+        if (loadPluginFile(full, &candidate))
+        {
+            snprintf(candidate.filename, sizeof(candidate.filename), "%s", item->d_name);
+            plugins[pluginCount++] = candidate;
+        }
+    }
+    closedir(dir);
+}
+
+static int installPluginsFromSD(void)
+{
+    DIR *dir = opendir("sdmc:/3ds/CINTENDO/PluginInstall");
+    if (!dir)
+        return 0;
+    int installed = 0;
+    struct dirent *item;
+    while ((item = readdir(dir)))
+    {
+        if (!hasExtension(item->d_name, ".cplug"))
+            continue;
+        char source[PATH_SIZE], destination[PATH_SIZE];
+        if (snprintf(source, sizeof(source), "sdmc:/3ds/CINTENDO/PluginInstall/%s", item->d_name) >= (int)sizeof(source) ||
+            snprintf(destination, sizeof(destination), "sdmc:/3ds/CINTENDO/Plugins/%s", item->d_name) >= (int)sizeof(destination))
+            continue;
+        Plugin candidate;
+        if (!loadPluginFile(source, &candidate))
+            continue;
+        FILE *in = fopen(source, "rb");
+        FILE *out = fopen(destination, "wb");
+        if (!in || !out)
+        {
+            if (in) fclose(in);
+            if (out) fclose(out);
+            continue;
+        }
+        char buffer[512];
+        size_t n;
+        int ok = 1;
+        while ((n = fread(buffer, 1, sizeof(buffer), in)) > 0)
+            if (fwrite(buffer, 1, n, out) != n) { ok = 0; break; }
+        if (ferror(in)) ok = 0;
+        fclose(in);
+        if (fclose(out) != 0) ok = 0;
+        if (ok) installed++;
+        else remove(destination);
+    }
+    closedir(dir);
+    scanPlugins();
+    return installed;
+}
+
+static void resetCintendo(void)
+{
+    remove("sdmc:/3ds/CINTENDO/config.ini");
+    DIR *dir = opendir("sdmc:/3ds/CINTENDO/Plugins");
+    if (dir)
+    {
+        struct dirent *item;
+        while ((item = readdir(dir)))
+        {
+            if (!hasExtension(item->d_name, ".cplug"))
+                continue;
+            char full[PATH_SIZE];
+            if (snprintf(full, sizeof(full), "sdmc:/3ds/CINTENDO/Plugins/%s", item->d_name) < (int)sizeof(full))
+                remove(full);
+        }
+        closedir(dir);
+    }
+    themeIndex = 0;
+    hints = 1;
+    advancedUnlocked = 0;
+    selected = 0;
+    scroll = 0;
+    scanPlugins();
+    statusSet("CINTENDO reset. Save Vault backups were preserved.");
+    settingsSave();
+}
+
+static void drawPlugins(void)
+{
+    scanPlugins();
+    consoleSelect(&top);
+    consoleClear();
+    header("PLUGIN CENTER");
+    printf("\\n  Installed plugins: %d / 32\\n\\n", pluginCount);
+    for (int i = 0; i < pluginCount && i < 14; i++)
+        printf("  %s %s\\n", selected == i ? ">" : " ", plugins[i].name);
+    if (!pluginCount)
+        printf("  No plugins installed yet.\\n");
+    consoleSelect(&bottom);
+    consoleClear();
+    header("SD CARD INSTALL");
+    printf("  Copy .cplug packages into:\\n");
+    printf("  sdmc:/3ds/CINTENDO/PluginInstall/\\n\\n");
+    printf("  Then press Y to install them.\\n");
+    printf("  A: Open selected plugin\\n  Y: Install from SD\\n  B: Advanced Tools");
+    footer();
+}
+
+static void drawPluginDetails(void)
+{
+    consoleSelect(&top);
+    consoleClear();
+    header("PLUGIN DETAILS");
+    printf("\\n  %s\\n\\n", activePlugin.name);
+    printf("  ID: %s\\n", activePlugin.id);
+    printf("  %s\\n", activePlugin.description);
+    consoleSelect(&bottom);
+    consoleClear();
+    header("PLUGIN RUNNER");
+    if (strcmp(activePlugin.id, "battery") == 0)
+        printf("  Battery level: %d%%\\n", PTMU_GetBatteryLevel());
+    else if (strcmp(activePlugin.id, "clock") == 0)
+        printf("  System tick: %llu\\n", (unsigned long long)svcGetSystemTick());
+    else if (strcmp(activePlugin.id, "storage") == 0)
+    {
+        struct statvfs v;
+        if (statvfs("sdmc:/", &v) == 0)
+            printf("  Free SD: %llu MB\\n", (unsigned long long)v.f_bavail * v.f_frsize / 1048576ULL);
+    }
+    else if (strcmp(activePlugin.id, "vault") == 0)
+    {
+        DIR *d = opendir("sdmc:/3ds/CINTENDO/SaveVault");
+        int n = 0;
+        if (d) { struct dirent *e; while ((e = readdir(d))) if (strcmp(e->d_name, ".") && strcmp(e->d_name, "..")) n++; closedir(d); }
+        printf("  Backup files: %d\\n", n);
+    }
+    else if (strcmp(activePlugin.id, "filetypes") == 0)
+        printf("  Supported browser types: 3DSX, CIA, SAV, TXT, PNG, JPG, ZIP and more.\\n");
+    else if (strcmp(activePlugin.id, "config") == 0)
+        printf("  Config: sdmc:/3ds/CINTENDO/config.ini\\n  Theme index: %d\\n  Hints: %s\\n", themeIndex, hints ? "ON" : "OFF");
+    else if (strcmp(activePlugin.id, "theme") == 0)
+        printf("  Active theme: %s\\n  Theme presets: %d\\n", themes[themeIndex].name, (int)(sizeof(themes) / sizeof(themes[0])));
+    else if (strcmp(activePlugin.id, "folders") == 0)
+    {
+        DIR *d = opendir("sdmc:/3ds");
+        int n = 0;
+        if (d) { struct dirent *e; while ((e = readdir(d))) if (strcmp(e->d_name, ".") && strcmp(e->d_name, "..")) n++; closedir(d); }
+        printf("  Entries in sdmc:/3ds: %d\\n", n);
+    }
+    else if (strcmp(activePlugin.id, "sdcheck") == 0)
+    {
+        struct stat st;
+        printf("  CINTENDO folder: %s\\n", stat("sdmc:/3ds/CINTENDO", &st) == 0 ? "available" : "missing");
+        printf("  Plugin folder: %s\\n", stat("sdmc:/3ds/CINTENDO/Plugins", &st) == 0 ? "available" : "missing");
+    }
+    else if (strcmp(activePlugin.id, "about") == 0)
+        printf("  CINTENDO plugin API v1\\n  Made by danielwav1\\n");
+    printf("\\n  B: Back");
+    footer();
+}
+\nstatic void statusSet(const char *value)
 {
     snprintf(status, sizeof(status), "%s", value);
 }
@@ -91,7 +304,7 @@ static void ensureFolders(void)
 {
     mkdir("sdmc:/3ds", 0777);
     mkdir("sdmc:/3ds/CINTENDO", 0777);
-    mkdir("sdmc:/3ds/CINTENDO/SaveVault", 0777);
+    mkdir("sdmc:/3ds/CINTENDO/SaveVault", 0777);\n    mkdir("sdmc:/3ds/CINTENDO/Plugins", 0777);\n    mkdir("sdmc:/3ds/CINTENDO/PluginInstall", 0777);
 }
 
 static void settingsLoad(void)
@@ -460,7 +673,7 @@ static void draw(void)
     else if (page == THEMES) drawThemes();
     else if (page == ABOUT) drawAbout();
     else if (page == DETAILS) drawDetails();
-    else if (page == ADVANCED) drawAdvanced();
+    else if (page == ADVANCED) drawAdvanced();\n    else if (page == PLUGINS) drawPlugins();\n    else if (page == PLUGIN_DETAILS) drawPluginDetails();\n    else if (page == RESET_CONFIRM) { consoleSelect(&top); consoleClear(); header("RESET CINTENDO"); printf("\\n  Reset settings and remove installed plugins?\\n\\n  Save Vault backups will be kept.\\n"); consoleSelect(&bottom); consoleClear(); header("CONFIRMATION"); printf("  Y: Confirm reset\\n  B: Cancel"); footer(); }
     gfxFlushBuffers();
     gfxSwapBuffers();
 }
@@ -585,7 +798,7 @@ int main(void)
     consoleInit(GFX_TOP, &top);
     consoleInit(GFX_BOTTOM, &bottom);
     ensureFolders();
-    settingsLoad();
+    settingsLoad();\n    scanPlugins();
 
     while (aptMainLoop() && running)
     {
