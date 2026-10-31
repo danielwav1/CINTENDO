@@ -42,6 +42,7 @@ static int accent = 0;
 static int running = 1;
 static int dirty = 1;
 static Page page = PAGE_HOME;
+static Page previousPage = PAGE_FILES;
 static char currentPath[PATH_SIZE] = "sdmc:/";
 static char detailPath[PATH_SIZE];
 static char statusMessage[96] = "Welcome to CINTENDO.";
@@ -456,6 +457,7 @@ static void openSelected(int applicationsOnly)
     }
 
     snprintf(detailPath, sizeof(detailPath), "%s", path);
+    previousPage = page;
     page = PAGE_DETAIL;
     dirty = 1;
 }
@@ -607,7 +609,7 @@ int main(void)
             if (keys & KEY_B)
             {
                 if (page == PAGE_DETAIL)
-                    page = detailPath[0] ? (strstr(detailPath, "sdmc:/3ds") == detailPath ? PAGE_APPS : PAGE_FILES) : PAGE_FILES;
+                    page = previousPage;
                 else
                     page = PAGE_HOME;
                 dirty = 1;
@@ -619,9 +621,6 @@ int main(void)
             draw();
             dirty = 0;
         }
-
-        if (showHints)
-            hidScanInput();
 
         gspWaitForVBlank();
     }
