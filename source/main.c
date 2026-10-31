@@ -1,4 +1,5 @@
 #include <3ds.h>
+#include <citro2d.h>
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -60,6 +61,7 @@ static const char *reset = "\x1b[0m";
 static const char *black = "\x1b[30m";
 static PrintConsole top;
 static PrintConsole bottom;
+static C2D_TextBuf launcherText;
 static Entry entries[MAX_ENTRIES];
 static int count;
 static int selected;
@@ -426,33 +428,62 @@ static void footer(void)
     printf("\n%sMade by danielwav1%s", themes[themeIndex].primary, reset);
 }
 
+static void launcherTextDraw(const char *value, float x, float y, float scale)
+{
+    C2D_Text text;
+    C2D_TextBufClear(launcherText);
+    C2D_TextParse(&text, launcherText, value);
+    C2D_TextOptimize(&text);
+    C2D_DrawText(&text, C2D_AlignCenter, x, y, 0.5f, scale, scale);
+}
+
 static void drawHome(void)
 {
-    consoleSelect(&top);
-    consoleClear();
-    header("HOME");
-    printf("\n");
-    printf("%sYour 3DS. Your way.%s\n", themes[themeIndex].accent, reset);
-    printf("%s%s%s\n\n", themes[themeIndex].secondary, themes[themeIndex].tagline, reset);
+    static const char *labels[] = {
+        "Files", "Homebrew", "Save Vault",
+        "Themes", "System", "Settings",
+        "Plugins", "About", "Music"
+    };
+    static const char *symbols[] = {"F", "H", "S", "T", "D", "!", "P", "i", "M"};
+    static const u32 colors[] = {
+        0xFF8A42E8, 0xFF36A5D9, 0xFF36B58B,
+        0xFFDB568B, 0xFF4774D8, 0xFF657080,
+        0xFFB84DDB, 0xFF4B91A8, 0xFFE29A36
+    };
+    C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
+    C2D_SceneBegin(GFX_TOP);
+    C2D_DrawRectSolid(0, 0, 0, 400, 240, 0, C2D_Color32(14, 17, 25, 255));
+    C2D_DrawRectSolid(0, 0, 0.1f, 400, 35, 0, C2D_Color32(25, 30, 43, 255));
+    launcherTextDraw("CINTENDO", 66, 10, 0.65f);
+    launcherTextDraw("HOME", 350, 12, 0.45f);
     for (int i = 0; i < 9; i++)
-        printf("%s %s%s%s\n", selected == i ? ">" : " ",
-               selected == i ? themes[themeIndex].primary : reset,
-               homeLabels[i], reset);
-    footer();
-
-    consoleSelect(&bottom);
-    consoleClear();
-    header("QUICK PANEL");
-    printf("  [FM] Browse SD card\n");
-    printf("  [HB] Find installed homebrew\n");
-    printf("  [SV] Archive save backups\n");
-    printf("  [TH] Change the whole look\n");
-    printf("  [SYS] Storage dashboard\n\n");
-    printf("%sSTATUS%s\n%s\n", themes[themeIndex].accent, reset, status);
-    if (advancedUnlocked)
-        printf("\n%sADVANCED MODE UNLOCKED%s", themes[themeIndex].primary, reset);
-    else
-        printf("\nHold L + R + X + Y for Advanced Tools");
+    {
+        float x = 18.0f + (float)(i % 3) * 128.0f;
+        float y = 49.0f + (float)(i / 3) * 61.0f;
+        u32 tile = colors[i];
+        if (selected == i)
+        {
+            C2D_DrawRectSolid(x - 3, y - 3, 0.2f, 112, 55, 7, C2D_Color32(245, 245, 255, 255));
+            C2D_DrawRectSolid(x, y, 0.3f, 106, 49, 6, tile);
+        }
+        else
+            C2D_DrawRectSolid(x, y, 0.2f, 106, 49, 6, tile);
+        launcherTextDraw(symbols[i], x + 53, y + 5, 0.9f);
+        launcherTextDraw(labels[i], x + 53, y + 31, 0.36f);
+    }
+    C2D_DrawRectSolid(0, 232, 0.2f, 400, 8, 0, C2D_Color32(35, 42, 58, 255));
+    C2D_SceneBegin(GFX_BOTTOM);
+    C2D_DrawRectSolid(0, 0, 0, 320, 240, 0, C2D_Color32(14, 17, 25, 255));
+    C2D_DrawRectSolid(12, 12, 0.1f, 296, 88, 8, C2D_Color32(25, 30, 43, 255));
+    launcherTextDraw("APP LAUNCHER", 160, 25, 0.5f);
+    launcherTextDraw(labels[selected], 160, 54, 0.8f);
+    launcherTextDraw("Your 3DS. Your apps.", 160, 78, 0.38f);
+    C2D_DrawRectSolid(12, 113, 0.1f, 296, 105, 8, C2D_Color32(25, 30, 43, 255));
+    launcherTextDraw("D-PAD  Navigate apps", 160, 126, 0.43f);
+    launcherTextDraw("A      Open selected app", 160, 148, 0.43f);
+    launcherTextDraw("B      Back     START Exit", 160, 170, 0.43f);
+    launcherTextDraw("Made by danielwav1", 160, 201, 0.38f);
+    C3D_FrameEnd(0);
 }
 
 static void drawList(int appMode)
@@ -688,8 +719,11 @@ static void draw(void)
     else if (page == PLUGINS) drawPlugins();
     else if (page == PLUGIN_DETAILS) drawPluginDetails();
     else if (page == RESET_CONFIRM) { consoleSelect(&top); consoleClear(); header("RESET CINTENDO"); printf("\n  Reset settings and remove installed plugins?\n\n  Save Vault backups will be kept.\n"); consoleSelect(&bottom); consoleClear(); header("CONFIRMATION"); printf("  Y: Confirm reset\n  B: Cancel"); footer(); }
-    gfxFlushBuffers();
-    gfxSwapBuffers();
+    if (page != HOME)
+    {
+        gfxFlushBuffers();
+        gfxSwapBuffers();
+    }
 }
 
 static void move(int direction, int total)
@@ -809,6 +843,9 @@ static int copyToVault(const char *source)
 int main(void)
 {
     gfxInitDefault();
+    C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
+    C2D_Init(C2D_DEFAULT_MAX_OBJECTS);
+    launcherText = C2D_TextBufNew(4096);
     ndspInit();
     consoleInit(GFX_TOP, &top);
     consoleInit(GFX_BOTTOM, &bottom);
@@ -838,8 +875,10 @@ int main(void)
 
         if (page == HOME)
         {
-            if (keys & KEY_UP) { move(-1, 9); dirty = 1; }
-            if (keys & KEY_DOWN) { move(1, 9); dirty = 1; }
+            if (keys & KEY_LEFT) { move(-1, 9); dirty = 1; }
+            if (keys & KEY_RIGHT) { move(1, 9); dirty = 1; }
+            if (keys & KEY_UP) { move(-3, 9); dirty = 1; }
+            if (keys & KEY_DOWN) { move(3, 9); dirty = 1; }
             if (keys & KEY_A)
             {
                 if (selected == 0)
@@ -1063,6 +1102,9 @@ int main(void)
 
     stopMusic();
     ndspExit();
+    C2D_TextBufDelete(launcherText);
+    C2D_Fini();
+    C3D_Fini();
     gfxExit();
     return 0;
 }
