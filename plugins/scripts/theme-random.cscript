@@ -1,0 +1,5 @@
+CINTENDO_SCRIPT_V1
+id=theme-random
+name=Random Theme
+description=Choose a random CINTENDO theme preset.
+action=THEME_RANDOM
