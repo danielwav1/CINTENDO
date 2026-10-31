@@ -1,0 +1,5 @@
+CINTENDO_SCRIPT_V1
+id=about-engine
+name=Plugin Engine Info
+description=Display information about the built-in safe script interpreter.
+action=SHOW_ABOUT
