@@ -1026,8 +1026,6 @@ static void drawGraphicalPage(void)
 static void draw(void)
 {
     drawGraphicalPage();
-    gfxFlushBuffers();
-    gfxSwapBuffers();
 }
 
 
@@ -1154,8 +1152,6 @@ int main(void)
     bottomTarget = C2D_CreateScreenTarget(GFX_BOTTOM, GFX_LEFT);
     launcherText = C2D_TextBufNew(16384);
     ndspInit();
-    consoleInit(GFX_TOP, &top);
-    consoleInit(GFX_BOTTOM, &bottom);
     ensureFolders();
     settingsLoad();
     scanPlugins();
