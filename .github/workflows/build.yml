@@ -15,14 +15,41 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Citro2D
-        run: dkp-pacman -Sy --noconfirm && dkp-pacman -S --noconfirm 3ds-citro2d
+        run: dkp-pacman -Sy --noconfirm && dkp-pacman -S --noconfirm citro2d
 
       - name: Build CINTENDO
         run: make
 
-      - uses: actions/upload-artifact@v4
+      - name: Prepare SD installation package
+        run: |
+          mkdir -p package/3ds/CINTENDO/PluginKeys
+          mkdir -p package/3ds/CINTENDO/Plugins
+          cp CINTENDO.3dsx package/3ds/CINTENDO/CINTENDO.3dsx
+          cp CINTENDO.smdh package/3ds/CINTENDO/CINTENDO.smdh
+          cp plugins/keys/*.cplug package/3ds/CINTENDO/PluginKeys/
+          cp plugins/scripts/*.cscript package/3ds/CINTENDO/Plugins/
+          cat > package/INSTALL.txt <<'EOF'
+          CINTENDO SD CARD INSTALLATION
+
+          1. Extract this package.
+          2. Copy the "3ds" folder to the root of your 3DS SD card.
+          3. Merge folders if your SD card already has a 3ds folder.
+          4. Open the Homebrew Launcher and start CINTENDO.
+
+          Main app:
+          /3ds/CINTENDO/CINTENDO.3dsx
+
+          The included PluginKeys and Plugins folders contain the matching
+          starter plugin files. Existing CINTENDO settings and Save Vault
+          backups are not included or overwritten by this package.
+          EOF
+
+      - name: Upload installable build
+        uses: actions/upload-artifact@v4
         with:
-          name: CINTENDO-3DS
+          name: CINTENDO-Install
           path: |
             CINTENDO.3dsx
             CINTENDO.smdh
+            package/
+          if-no-files-found: error
