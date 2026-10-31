@@ -1,6 +1,5 @@
 #include <3ds.h>
 #include <dirent.h>
-#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,609 +8,724 @@
 #include <sys/statvfs.h>
 #include <unistd.h>
 
-#define MAX_ENTRIES 256
-#define VISIBLE_ROWS 17
+#define MAX_ENTRIES 220
 #define PATH_SIZE 512
+#define VISIBLE_ROWS 16
 
 typedef struct
 {
     char name[256];
     unsigned long long size;
-    int isDirectory;
-} FileEntry;
+    int directory;
+} Entry;
+
+typedef struct
+{
+    const char *name;
+    const char *primary;
+    const char *secondary;
+    const char *accent;
+    const char *tagline;
+} Theme;
 
 typedef enum
 {
-    PAGE_HOME,
-    PAGE_FILES,
-    PAGE_APPS,
-    PAGE_SYSTEM,
-    PAGE_SETTINGS,
-    PAGE_ABOUT,
-    PAGE_DETAIL
+    HOME,
+    FILES,
+    APPS,
+    VAULT,
+    SYSTEM,
+    SETTINGS,
+    THEMES,
+    ABOUT,
+    DETAILS,
+    ADVANCED
 } Page;
 
-static PrintConsole topScreen;
-static PrintConsole bottomScreen;
-static FileEntry entries[MAX_ENTRIES];
-static int entryCount;
+static const Theme themes[] = {
+    {"Standard", "\x1b[31m", "\x1b[34m", "\x1b[37m", "Red / Blue / Black / White"},
+    {"Aesthetic Pink", "\x1b[35m", "\x1b[32m", "\x1b[36m", "Pink / Green / Mint / Sprinkles"},
+    {"CindraOS", "\x1b[31m", "\x1b[37m", "\x1b[37m", "Crimson / Black / White"},
+    {"Midnight", "\x1b[35m", "\x1b[36m", "\x1b[37m", "Purple / Cyan / Midnight"},
+    {"Ocean", "\x1b[36m", "\x1b[34m", "\x1b[37m", "Aqua / Blue / Ice"},
+    {"Sunset", "\x1b[33m", "\x1b[35m", "\x1b[37m", "Amber / Pink / Dusk"}
+};
+
+static const char *reset = "\x1b[0m";
+static const char *black = "\x1b[30m";
+static PrintConsole top;
+static PrintConsole bottom;
+static Entry entries[MAX_ENTRIES];
+static int count;
 static int selected;
-static int scrollOffset;
-static int showHints = 1;
-static int accent = 0;
+static int scroll;
+static int themeIndex;
+static int hints = 1;
+static int advancedUnlocked;
 static int running = 1;
 static int dirty = 1;
-static Page page = PAGE_HOME;
-static Page previousPage = PAGE_FILES;
-static char currentPath[PATH_SIZE] = "sdmc:/";
-static char detailPath[PATH_SIZE];
-static char statusMessage[96] = "Welcome to CINTENDO.";
+static int comboWasHeld;
+static Page page = HOME;
+static Page previousPage = FILES;
+static char path[PATH_SIZE] = "sdmc:/";
+static char detail[PATH_SIZE];
+static char status[100] = "Welcome to CINTENDO.";
 
-static const char *homeItems[] = {
-    "File Manager",
-    "Homebrew Library",
-    "System Dashboard",
-    "Settings",
-    "About CINTENDO"
+static const char *homeLabels[] = {
+    "[FM]  File Manager",
+    "[HB]  Homebrew Library",
+    "[SV]  Save Vault",
+    "[TH]  Theme Studio",
+    "[SYS] System Dashboard",
+    "[SET] Settings",
+    "[ADV] Advanced Tools",
+    "[i]   About CINTENDO"
 };
 
-static const char *accentCodes[] = {
-    "\x1b[36m",
-    "\x1b[35m",
-    "\x1b[32m"
-};
-
-static const char *resetCode = "\x1b[0m";
-
-static void setStatus(const char *message)
+static void statusSet(const char *value)
 {
-    snprintf(statusMessage, sizeof(statusMessage), "%s", message);
+    snprintf(status, sizeof(status), "%s", value);
 }
 
-static void loadSettings(void)
+static void ensureFolders(void)
+{
+    mkdir("sdmc:/3ds", 0777);
+    mkdir("sdmc:/3ds/CINTENDO", 0777);
+    mkdir("sdmc:/3ds/CINTENDO/SaveVault", 0777);
+}
+
+static void settingsLoad(void)
 {
     FILE *file = fopen("sdmc:/3ds/CINTENDO/config.ini", "r");
     if (!file)
         return;
 
-    int hints = showHints;
-    int color = accent;
-
-    if (fscanf(file, "%d %d", &hints, &color) == 2)
+    int savedTheme = 0;
+    int savedHints = 1;
+    if (fscanf(file, "%d %d", &savedTheme, &savedHints) == 2)
     {
-        showHints = hints ? 1 : 0;
-        accent = color >= 0 && color <= 2 ? color : 0;
+        if (savedTheme >= 0 && savedTheme < (int)(sizeof(themes) / sizeof(themes[0])))
+            themeIndex = savedTheme;
+        hints = savedHints ? 1 : 0;
     }
-
     fclose(file);
 }
 
-static void saveSettings(void)
+static void settingsSave(void)
 {
-    mkdir("sdmc:/3ds", 0777);
-    mkdir("sdmc:/3ds/CINTENDO", 0777);
-
+    ensureFolders();
     FILE *file = fopen("sdmc:/3ds/CINTENDO/config.ini", "w");
     if (!file)
     {
-        setStatus("Could not save settings to the SD card.");
+        statusSet("Could not save settings.");
         return;
     }
-
-    fprintf(file, "%d %d\n", showHints, accent);
+    fprintf(file, "%d %d\n", themeIndex, hints);
     fclose(file);
-    setStatus("Settings saved.");
-}
-
-static int compareEntries(const void *left, const void *right)
-{
-    const FileEntry *a = left;
-    const FileEntry *b = right;
-
-    if (a->isDirectory != b->isDirectory)
-        return b->isDirectory - a->isDirectory;
-
-    return strcasecmp(a->name, b->name);
+    statusSet("Settings saved to SD card.");
 }
 
 static int hasExtension(const char *name, const char *extension)
 {
-    size_t nameLength = strlen(name);
-    size_t extensionLength = strlen(extension);
-
-    if (nameLength < extensionLength)
-        return 0;
-
-    return strcasecmp(name + nameLength - extensionLength, extension) == 0;
+    size_t a = strlen(name);
+    size_t b = strlen(extension);
+    return a >= b && strcasecmp(name + a - b, extension) == 0;
 }
 
-static int scanDirectory(const char *path, int applicationsOnly)
+static int compareEntries(const void *left, const void *right)
 {
-    DIR *directory = opendir(path);
-    entryCount = 0;
+    const Entry *a = left;
+    const Entry *b = right;
+    if (a->directory != b->directory)
+        return b->directory - a->directory;
+    return strcasecmp(a->name, b->name);
+}
 
-    if (!directory)
+static int scan(const char *folder, int onlyApps)
+{
+    DIR *dir = opendir(folder);
+    count = 0;
+    if (!dir)
     {
-        setStatus("Could not read this directory.");
+        statusSet("Folder could not be opened.");
         return 0;
     }
 
     struct dirent *item;
-
-    while ((item = readdir(directory)) != NULL && entryCount < MAX_ENTRIES)
+    while ((item = readdir(dir)) && count < MAX_ENTRIES)
     {
-        if (strcmp(item->d_name, ".") == 0 || strcmp(item->d_name, "..") == 0)
+        if (!strcmp(item->d_name, ".") || !strcmp(item->d_name, ".."))
             continue;
 
-        char fullPath[PATH_SIZE];
+        char full[PATH_SIZE];
         struct stat info;
-
-        if (snprintf(fullPath, sizeof(fullPath), "%s%s%s", path,
-                     path[strlen(path) - 1] == '/' ? "" : "/", item->d_name) >= (int)sizeof(fullPath))
+        int length = snprintf(full, sizeof(full), "%s%s%s", folder,
+                              folder[strlen(folder) - 1] == '/' ? "" : "/",
+                              item->d_name);
+        if (length < 0 || length >= (int)sizeof(full) || stat(full, &info) != 0)
             continue;
 
-        if (stat(fullPath, &info) != 0)
+        int isDir = S_ISDIR(info.st_mode);
+        if (onlyApps && (isDir || !hasExtension(item->d_name, ".3dsx")))
             continue;
 
-        int isDirectory = S_ISDIR(info.st_mode);
-
-        if (applicationsOnly && (isDirectory || !hasExtension(item->d_name, ".3dsx")))
-            continue;
-
-        FileEntry *entry = &entries[entryCount++];
-        snprintf(entry->name, sizeof(entry->name), "%s", item->d_name);
-        entry->isDirectory = isDirectory;
-        entry->size = isDirectory ? 0 : (unsigned long long)info.st_size;
+        snprintf(entries[count].name, sizeof(entries[count].name), "%s", item->d_name);
+        entries[count].directory = isDir;
+        entries[count].size = isDir ? 0 : (unsigned long long)info.st_size;
+        count++;
     }
-
-    closedir(directory);
-    qsort(entries, entryCount, sizeof(FileEntry), compareEntries);
+    closedir(dir);
+    qsort(entries, count, sizeof(Entry), compareEntries);
     selected = 0;
-    scrollOffset = 0;
+    scroll = 0;
     return 1;
 }
 
-static void formatSize(unsigned long long bytes, char *output, size_t outputSize)
+static void formatSize(unsigned long long value, char *out, size_t size)
 {
-    if (bytes >= 1024ULL * 1024ULL * 1024ULL)
-        snprintf(output, outputSize, "%.2f GB", (double)bytes / 1073741824.0);
-    else if (bytes >= 1024ULL * 1024ULL)
-        snprintf(output, outputSize, "%.1f MB", (double)bytes / 1048576.0);
-    else if (bytes >= 1024ULL)
-        snprintf(output, outputSize, "%.1f KB", (double)bytes / 1024.0);
+    if (value >= 1073741824ULL)
+        snprintf(out, size, "%.2f GB", (double)value / 1073741824.0);
+    else if (value >= 1048576ULL)
+        snprintf(out, size, "%.1f MB", (double)value / 1048576.0);
+    else if (value >= 1024ULL)
+        snprintf(out, size, "%.1f KB", (double)value / 1024.0);
     else
-        snprintf(output, outputSize, "%llu B", bytes);
+        snprintf(out, size, "%llu B", value);
 }
 
-static void drawHeader(const char *section)
+static void header(const char *section)
 {
-    printf("%sCINTENDO%s  %s\n", accentCodes[accent], resetCode, section);
-    printf("----------------------------------------------\n");
+    printf("%sCINTENDO%s  %s%s\n", themes[themeIndex].primary, reset,
+           themes[themeIndex].secondary, section);
+    printf("%s==============================================%s\n", themes[themeIndex].accent, reset);
+}
+
+static void footer(void)
+{
+    printf("\n%sMade by danielwav1%s", themes[themeIndex].primary, reset);
 }
 
 static void drawHome(void)
 {
-    consoleSelect(&topScreen);
+    consoleSelect(&top);
     consoleClear();
-    drawHeader("HOME");
-
+    header("HOME");
     printf("\n");
-    printf("  Your 3DS. Your way.\n\n");
+    printf("%sYour 3DS. Your way.%s\n", themes[themeIndex].accent, reset);
+    printf("%s%s%s\n\n", themes[themeIndex].secondary, themes[themeIndex].tagline, reset);
+    for (int i = 0; i < 8; i++)
+        printf("%s %s%s%s\n", selected == i ? ">" : " ",
+               selected == i ? themes[themeIndex].primary : reset,
+               homeLabels[i], reset);
+    footer();
 
-    for (int i = 0; i < 5; i++)
-        printf("%s %s\n", selected == i ? ">" : " ", homeItems[i]);
-
-    printf("\n");
-    printf("  Made by danielwav1\n");
-
-    consoleSelect(&bottomScreen);
+    consoleSelect(&bottom);
     consoleClear();
-    printf("QUICK INFO\n");
-    printf("--------------------------------------\n");
-    printf("  File Manager  Browse your SD card\n");
-    printf("  Homebrew      Find your .3dsx apps\n");
-    printf("  Dashboard     Storage information\n\n");
-    printf("STATUS\n");
-    printf("%s\n", statusMessage);
+    header("QUICK PANEL");
+    printf("  [FM] Browse SD card\n");
+    printf("  [HB] Find installed homebrew\n");
+    printf("  [SV] Archive save backups\n");
+    printf("  [TH] Change the whole look\n");
+    printf("  [SYS] Storage dashboard\n\n");
+    printf("%sSTATUS%s\n%s\n", themes[themeIndex].accent, reset, status);
+    if (advancedUnlocked)
+        printf("\n%sADVANCED MODE UNLOCKED%s", themes[themeIndex].primary, reset);
+    else
+        printf("\nHold L + R + X + Y for Advanced Tools");
 }
 
-static void drawFileList(int applicationsOnly)
+static void drawList(int appMode)
 {
-    consoleSelect(&topScreen);
+    consoleSelect(&top);
     consoleClear();
-    drawHeader(applicationsOnly ? "HOMEBREW LIBRARY" : "FILE MANAGER");
-
-    printf("\n");
-    printf("%.43s\n", currentPath);
+    header(appMode ? "HOMEBREW LIBRARY" : page == VAULT ? "SAVE VAULT" : "FILE MANAGER");
+    printf("\n%.44s\n", path);
     printf("----------------------------------------------\n");
 
+    int parent = !appMode && page != VAULT && strcmp(path, "sdmc:/") != 0;
     int visible = 0;
-
-    if (!applicationsOnly && strcmp(currentPath, "sdmc:/") != 0)
+    if (parent)
     {
-        printf("%s ..  [Parent directory]\n", selected == 0 ? ">" : " ");
+        printf("%s ..  [Parent folder]\n", selected == 0 ? ">" : " ");
         visible++;
     }
 
-    int firstEntry = scrollOffset;
-    for (int i = firstEntry; i < entryCount && visible < VISIBLE_ROWS; i++)
+    for (int i = scroll; i < count && visible < VISIBLE_ROWS; i++)
     {
-        int rowSelected = selected == i + ((!applicationsOnly && strcmp(currentPath, "sdmc:/") != 0) ? 1 : 0);
-        char sizeText[24];
-
-        if (entries[i].isDirectory)
-            snprintf(sizeText, sizeof(sizeText), "<DIR>");
+        int row = i + parent;
+        char size[20];
+        if (entries[i].directory)
+            snprintf(size, sizeof(size), "<DIR>");
         else
-            formatSize(entries[i].size, sizeText, sizeof(sizeText));
-
-        printf("%s %-29.29s %8s\n",
-               rowSelected ? ">" : " ",
-               entries[i].name,
-               sizeText);
+            formatSize(entries[i].size, size, sizeof(size));
+        const char *kind = entries[i].directory ? "[DIR]" : hasExtension(entries[i].name, ".3dsx") ? "[3DSX]" : "[FILE]";
+        printf("%s %s %-23.23s %8s\n", selected == row ? ">" : " ",
+               kind, entries[i].name, size);
         visible++;
     }
+    if (!count)
+        printf("\n  Nothing here yet.\n");
 
-    if (entryCount == 0)
-        printf("\n  No matching files found.\n");
-
-    consoleSelect(&bottomScreen);
+    consoleSelect(&bottom);
     consoleClear();
-    printf("%s\n", applicationsOnly ? "HOMEBREW LIBRARY" : "FILE MANAGER");
-    printf("--------------------------------------\n");
-    printf("  %d entries found\n", entryCount);
-    printf("  A: Open / details\n");
-    printf("  B: %s\n", applicationsOnly ? "Home" : "Parent folder");
-    printf("  UP/DOWN: Navigate\n");
-    printf("\n%s\n", statusMessage);
-    printf("\n  made by danielwav1\n");
-}
-
-static void drawSystem(void)
-{
-    struct statvfs storage;
-    unsigned long long total = 0;
-    unsigned long long freeSpace = 0;
-
-    if (statvfs("sdmc:/", &storage) == 0)
+    header(appMode ? "APP LIBRARY" : page == VAULT ? "SAVE VAULT" : "FILE BROWSER");
+    printf("  %d items\n", count);
+    if (hints)
     {
-        total = (unsigned long long)storage.f_blocks * storage.f_frsize;
-        freeSpace = (unsigned long long)storage.f_bavail * storage.f_frsize;
+        printf("\n  UP/DOWN  Navigate\n");
+        printf("  A        Open / details\n");
+        printf("  B        Back\n");
     }
-
-    char totalText[24];
-    char freeText[24];
-    formatSize(total, totalText, sizeof(totalText));
-    formatSize(freeSpace, freeText, sizeof(freeText));
-
-    consoleSelect(&topScreen);
-    consoleClear();
-    drawHeader("SYSTEM DASHBOARD");
-
-    printf("\n  DEVICE\n");
-    printf("  Nintendo 3DS family\n");
-    printf("  Application: CINTENDO 1.0\n");
-    printf("  Runtime: Homebrew Launcher\n\n");
-    printf("  SD CARD\n");
-    printf("  Total capacity: %s\n", totalText);
-    printf("  Available:      %s\n", freeText);
-    printf("  Used:           %s\n", total >= freeSpace ? totalText : "Unknown");
-    printf("\n  Current location\n");
-    printf("  %.42s\n", currentPath);
-
-    consoleSelect(&bottomScreen);
-    consoleClear();
-    printf("SYSTEM DASHBOARD\n");
-    printf("--------------------------------------\n");
-    printf("  Storage values are read from the SD.\n");
-    printf("  No system settings are changed.\n\n");
-    printf("%s\n", statusMessage);
-    printf("\n  B: Home");
+    if (page == VAULT)
+        printf("\n  Vault location:\n  sdmc:/3ds/CINTENDO/SaveVault\n");
+    printf("\n%s\n", status);
+    footer();
 }
 
 static void drawSettings(void)
 {
-    consoleSelect(&topScreen);
+    consoleSelect(&top);
     consoleClear();
-    drawHeader("SETTINGS");
+    header("SETTINGS");
+    printf("\n%s %sControl hints: %s%s\n", selected == 0 ? ">" : " ",
+           themes[themeIndex].primary, hints ? "ON" : "OFF", reset);
+    printf("%s Theme: %s%s\n", selected == 1 ? ">" : " ",
+           themes[themeIndex].primary, themes[themeIndex].name);
+    printf("\n  Select a row and press A.\n");
+    consoleSelect(&bottom);
+    consoleClear();
+    header("PREFERENCES");
+    printf("  Theme settings open Theme Studio.\n");
+    printf("  Your choices persist after restart.\n");
+    printf("\n  B: Home");
+    footer();
+}
 
+static void drawThemes(void)
+{
+    consoleSelect(&top);
+    consoleClear();
+    header("THEME STUDIO");
     printf("\n");
-    printf("%s Control hints: %s\n", selected == 0 ? ">" : " ", showHints ? "ON" : "OFF");
-    printf("%s Accent color:  %s\n", selected == 1 ? ">" : " ",
-           accent == 0 ? "Cyan" : accent == 1 ? "Magenta" : "Green");
-    printf("\n  Changes are saved to the SD card.\n");
-
-    consoleSelect(&bottomScreen);
+    for (int i = 0; i < (int)(sizeof(themes) / sizeof(themes[0])); i++)
+    {
+        printf("%s %s%s%s\n", selected == i ? ">" : " ",
+               themes[i].primary, themes[i].name, reset);
+        printf("    %s%s\n", themes[i].accent, themes[i].tagline);
+        if (i == 1)
+            printf("    * . + * . + * . + * . +\n");
+    }
+    consoleSelect(&bottom);
     consoleClear();
-    printf("SETTINGS\n");
-    printf("--------------------------------------\n");
-    printf("  UP/DOWN: Select setting\n");
-    printf("  A: Change value\n");
-    printf("  B: Home\n\n");
-    printf("%s\n", statusMessage);
+    header("LIVE PRESETS");
+    printf("  Standard       Red / Blue / Black / White\n");
+    printf("  Aesthetic Pink Pink / Green / Mint\n");
+    printf("                 with sprinkle pattern\n");
+    printf("  CindraOS       Red / Black / White\n");
+    printf("  Midnight       Purple / Cyan\n");
+    printf("  Ocean          Aqua / Blue\n");
+    printf("  Sunset         Amber / Pink\n");
+    printf("\n  A: Apply and save\n  B: Back");
+    footer();
+}
+
+static void drawSystem(void)
+{
+    struct statvfs info;
+    unsigned long long total = 0;
+    unsigned long long freeBytes = 0;
+    if (statvfs("sdmc:/", &info) == 0)
+    {
+        total = (unsigned long long)info.f_blocks * info.f_frsize;
+        freeBytes = (unsigned long long)info.f_bavail * info.f_frsize;
+    }
+    char totalText[24], freeText[24], usedText[24];
+    formatSize(total, totalText, sizeof(totalText));
+    formatSize(freeBytes, freeText, sizeof(freeText));
+    formatSize(total >= freeBytes ? total - freeBytes : 0, usedText, sizeof(usedText));
+
+    consoleSelect(&top);
+    consoleClear();
+    header("SYSTEM DASHBOARD");
+    printf("\n  DEVICE\n  Nintendo 3DS family\n  CINTENDO 1.1\n");
+    printf("\n  STORAGE\n  Total: %s\n  Used:  %s\n  Free:  %s\n",
+           totalText, usedText, freeText);
+    printf("\n  SD mount: sdmc:/\n");
+    consoleSelect(&bottom);
+    consoleClear();
+    header("DIAGNOSTICS");
+    printf("  SD card statistics via statvfs.\n");
+    printf("  This app does not modify system\n  firmware or NAND settings.\n\n");
+    printf("  B: Home");
+    footer();
+}
+
+static void drawVault(void)
+{
+    consoleSelect(&top);
+    consoleClear();
+    header("SAVE VAULT");
+    printf("\n  Personal save-backup archive\n\n");
+    printf("  Put exported backup files in:\n");
+    printf("  sdmc:/3ds/CINTENDO/SaveVault/\n\n");
+    printf("  Open the folder to inspect files.\n");
+    printf("  CINTENDO keeps these as ordinary\n");
+    printf("  backup copies on your SD card.\n");
+    printf("\n  No game save is overwritten.\n");
+    consoleSelect(&bottom);
+    consoleClear();
+    header("SAVE DATA SAFETY");
+    printf("  For game restore, use Checkpoint or\n");
+    printf("  JKSM and choose the correct title.\n\n");
+    printf("  A generic .sav import cannot safely\n");
+    printf("  restore every 3DS game's save format.\n");
+    printf("\n  A: Open Vault folder\n  B: Home");
+    footer();
 }
 
 static void drawAbout(void)
 {
-    consoleSelect(&topScreen);
+    consoleSelect(&top);
     consoleClear();
-    drawHeader("ABOUT");
-
-    printf("\n  CINTENDO 1.0\n");
-    printf("  A homebrew companion for Nintendo 3DS.\n\n");
+    header("ABOUT CINTENDO");
+    printf("\n  CINTENDO 1.1\n");
+    printf("  A homebrew utility for Nintendo 3DS.\n\n");
     printf("  Made by danielwav1\n");
     printf("  github.com/danielwav1/CINTENDO\n\n");
     printf("  Built with devkitPro and libctru.\n");
-
-    consoleSelect(&bottomScreen);
+    consoleSelect(&bottom);
     consoleClear();
-    printf("ABOUT CINTENDO\n");
-    printf("--------------------------------------\n");
-    printf("  Browse files, inspect homebrew apps,\n");
-    printf("  and check SD card storage.\n\n");
-    printf("  CINTENDO is independent homebrew\n");
-    printf("  software and is not official Nintendo\n");
-    printf("  software.\n");
+    header("PROJECT");
+    printf("  Independent community homebrew.\n");
+    printf("  Not affiliated with Nintendo.\n\n");
+    printf("  B: Home");
+    footer();
 }
 
-static void drawDetail(void)
+static void drawDetails(void)
 {
     struct stat info;
-    char sizeText[24];
-    int exists = stat(detailPath, &info) == 0;
-
-    consoleSelect(&topScreen);
+    consoleSelect(&top);
     consoleClear();
-    drawHeader("FILE DETAILS");
-
-    printf("\n  Name\n  %.42s\n\n", strrchr(detailPath, '/') ? strrchr(detailPath, '/') + 1 : detailPath);
-    printf("  Full path\n  %.42s\n\n", detailPath);
-
-    if (exists)
+    header("FILE DETAILS");
+    printf("\n  %.42s\n\n", strrchr(detail, '/') ? strrchr(detail, '/') + 1 : detail);
+    printf("  Path: %.42s\n", detail);
+    if (stat(detail, &info) == 0)
     {
-        formatSize((unsigned long long)info.st_size, sizeText, sizeof(sizeText));
+        char size[24];
+        formatSize((unsigned long long)info.st_size, size, sizeof(size));
         printf("  Type: %s\n", S_ISDIR(info.st_mode) ? "Directory" : "File");
-        printf("  Size: %s\n", S_ISDIR(info.st_mode) ? "—" : sizeText);
+        printf("  Size: %s\n", size);
     }
-    else
-        printf("  This item is no longer available.\n");
-
-    if (hasExtension(detailPath, ".3dsx"))
-        printf("\n  Homebrew executable (.3dsx)\n");
-
-    consoleSelect(&bottomScreen);
+    consoleSelect(&bottom);
     consoleClear();
-    printf("FILE DETAILS\n");
-    printf("--------------------------------------\n");
-    printf("  A .3dsx file can be opened from the\n");
-    printf("  Homebrew Launcher. CINTENDO does not\n");
-    printf("  chainload applications yet.\n\n");
-    printf("  B: Back");
+    header("FILE ACTIONS");
+    printf("  X: Copy file into Save Vault\n");
+    printf("  B: Back\n\n");
+    printf("  Importing here creates an archive\n");
+    printf("  copy. It does not restore a game.");
+    footer();
+}
+
+static void drawAdvanced(void)
+{
+    consoleSelect(&top);
+    consoleClear();
+    header("ADVANCED TOOLS");
+    printf("\n  [READ-ONLY] System diagnostics\n");
+    printf("  [READ-ONLY] SD mount information\n");
+    printf("  [SAFE]      Open Save Vault\n");
+    printf("  [SAFE]      View CINTENDO config\n\n");
+    printf("  Privilege status: standard homebrew\n");
+    printf("  NAND/root access: not available\n");
+    consoleSelect(&bottom);
+    consoleClear();
+    header("ADVANCED MODE");
+    printf("  Unlocked by L + R + X + Y.\n\n");
+    printf("  This is an interface lock only.\n");
+    printf("  It does not grant root privileges,\n");
+    printf("  bypass Luma3DS or elevate permissions.\n");
+    printf("\n  B: Home");
+    footer();
 }
 
 static void draw(void)
 {
-    if (page == PAGE_HOME)
-        drawHome();
-    else if (page == PAGE_FILES)
-        drawFileList(0);
-    else if (page == PAGE_APPS)
-        drawFileList(1);
-    else if (page == PAGE_SYSTEM)
-        drawSystem();
-    else if (page == PAGE_SETTINGS)
-        drawSettings();
-    else if (page == PAGE_ABOUT)
-        drawAbout();
-    else if (page == PAGE_DETAIL)
-        drawDetail();
-
+    if (page == HOME) drawHome();
+    else if (page == FILES) drawList(0);
+    else if (page == APPS) drawList(1);
+    else if (page == VAULT) drawVault();
+    else if (page == SYSTEM) drawSystem();
+    else if (page == SETTINGS) drawSettings();
+    else if (page == THEMES) drawThemes();
+    else if (page == ABOUT) drawAbout();
+    else if (page == DETAILS) drawDetails();
+    else if (page == ADVANCED) drawAdvanced();
     gfxFlushBuffers();
     gfxSwapBuffers();
 }
 
-static int selectedEntryIndex(int applicationsOnly)
-{
-    int parentOffset = !applicationsOnly && strcmp(currentPath, "sdmc:/") != 0;
-    return selected - parentOffset;
-}
-
-static void openSelected(int applicationsOnly)
-{
-    int parentOffset = !applicationsOnly && strcmp(currentPath, "sdmc:/") != 0;
-
-    if (parentOffset && selected == 0)
-    {
-        char *lastSlash = strrchr(currentPath, '/');
-        if (lastSlash && lastSlash > currentPath + 5)
-            *lastSlash = '\0';
-        else
-            snprintf(currentPath, sizeof(currentPath), "sdmc:/");
-
-        scanDirectory(currentPath, 0);
-        setStatus("Opened parent directory.");
-        dirty = 1;
-        return;
-    }
-
-    int index = selectedEntryIndex(applicationsOnly);
-    if (index < 0 || index >= entryCount)
-        return;
-
-    char path[PATH_SIZE];
-    if (snprintf(path, sizeof(path), "%s%s%s", currentPath,
-                 currentPath[strlen(currentPath) - 1] == '/' ? "" : "/",
-                 entries[index].name) >= (int)sizeof(path))
-    {
-        setStatus("Path is too long.");
-        dirty = 1;
-        return;
-    }
-
-    if (!applicationsOnly && entries[index].isDirectory)
-    {
-        snprintf(currentPath, sizeof(currentPath), "%s", path);
-        scanDirectory(currentPath, 0);
-        setStatus("Directory opened.");
-        dirty = 1;
-        return;
-    }
-
-    snprintf(detailPath, sizeof(detailPath), "%s", path);
-    previousPage = page;
-    page = PAGE_DETAIL;
-    dirty = 1;
-}
-
-static void moveSelection(int direction, int total)
+static void move(int direction, int total)
 {
     if (total <= 0)
     {
         selected = 0;
         return;
     }
+    selected = (selected + direction + total) % total;
+    if (selected < scroll)
+        scroll = selected;
+    if (selected >= scroll + VISIBLE_ROWS)
+        scroll = selected - VISIBLE_ROWS + 1;
+}
 
-    selected += direction;
+static void parentFolder(void)
+{
+    char *slash = strrchr(path, '/');
+    if (slash && slash > path + 5)
+        *slash = '\0';
+    else
+        snprintf(path, sizeof(path), "sdmc:/");
+}
 
-    if (selected < 0)
-        selected = total - 1;
-    if (selected >= total)
-        selected = 0;
+static void openEntry(int appMode)
+{
+    int parent = !appMode && page == FILES && strcmp(path, "sdmc:/") != 0;
+    if (parent && selected == 0)
+    {
+        parentFolder();
+        scan(path, 0);
+        dirty = 1;
+        return;
+    }
 
-    if (selected < scrollOffset)
-        scrollOffset = selected;
-    if (selected >= scrollOffset + VISIBLE_ROWS)
-        scrollOffset = selected - VISIBLE_ROWS + 1;
+    int index = selected - parent;
+    if (index < 0 || index >= count)
+        return;
+
+    char full[PATH_SIZE];
+    int length = snprintf(full, sizeof(full), "%s%s%s", path,
+                          path[strlen(path) - 1] == '/' ? "" : "/",
+                          entries[index].name);
+    if (length < 0 || length >= (int)sizeof(full))
+    {
+        statusSet("Path is too long.");
+        dirty = 1;
+        return;
+    }
+
+    if (!appMode && entries[index].directory)
+    {
+        snprintf(path, sizeof(path), "%s", full);
+        scan(path, 0);
+        dirty = 1;
+        return;
+    }
+
+    snprintf(detail, sizeof(detail), "%s", full);
+    previousPage = page;
+    page = DETAILS;
+    dirty = 1;
+}
+
+static int copyToVault(const char *source)
+{
+    struct stat info;
+    if (stat(source, &info) != 0 || !S_ISREG(info.st_mode))
+        return 0;
+
+    ensureFolders();
+    const char *name = strrchr(source, '/');
+    name = name ? name + 1 : source;
+
+    char destination[PATH_SIZE];
+    if (snprintf(destination, sizeof(destination), "sdmc:/3ds/CINTENDO/SaveVault/%s", name) >= (int)sizeof(destination))
+        return 0;
+
+    FILE *input = fopen(source, "rb");
+    if (!input)
+        return 0;
+
+    FILE *output = fopen(destination, "wb");
+    if (!output)
+    {
+        fclose(input);
+        return 0;
+    }
+
+    unsigned char buffer[4096];
+    size_t bytes;
+    int ok = 1;
+    while ((bytes = fread(buffer, 1, sizeof(buffer), input)) > 0)
+    {
+        if (fwrite(buffer, 1, bytes, output) != bytes)
+        {
+            ok = 0;
+            break;
+        }
+    }
+    if (ferror(input))
+        ok = 0;
+    fclose(input);
+    if (fclose(output) != 0)
+        ok = 0;
+    return ok;
 }
 
 int main(void)
 {
     gfxInitDefault();
-    consoleInit(GFX_TOP, &topScreen);
-    consoleInit(GFX_BOTTOM, &bottomScreen);
-    loadSettings();
+    consoleInit(GFX_TOP, &top);
+    consoleInit(GFX_BOTTOM, &bottom);
+    ensureFolders();
+    settingsLoad();
 
     while (aptMainLoop() && running)
     {
         hidScanInput();
         u32 keys = hidKeysDown();
+        u32 held = hidKeysHeld();
+        u32 combo = KEY_L | KEY_R | KEY_X | KEY_Y;
+
+        if ((held & combo) == combo && !comboWasHeld)
+        {
+            advancedUnlocked = !advancedUnlocked;
+            comboWasHeld = 1;
+            statusSet(advancedUnlocked ? "Advanced tools unlocked." : "Advanced tools locked.");
+            dirty = 1;
+        }
+        if ((held & combo) != combo)
+            comboWasHeld = 0;
 
         if (keys & KEY_START)
             running = 0;
 
-        if (page == PAGE_HOME)
+        if (page == HOME)
         {
-            if (keys & KEY_DOWN)
-            {
-                moveSelection(1, 5);
-                dirty = 1;
-            }
-            if (keys & KEY_UP)
-            {
-                moveSelection(-1, 5);
-                dirty = 1;
-            }
+            if (keys & KEY_UP) { move(-1, 8); dirty = 1; }
+            if (keys & KEY_DOWN) { move(1, 8); dirty = 1; }
             if (keys & KEY_A)
             {
                 if (selected == 0)
                 {
-                    snprintf(currentPath, sizeof(currentPath), "sdmc:/");
-                    scanDirectory(currentPath, 0);
-                    page = PAGE_FILES;
+                    snprintf(path, sizeof(path), "sdmc:/");
+                    scan(path, 0);
+                    page = FILES;
                 }
                 else if (selected == 1)
                 {
-                    snprintf(currentPath, sizeof(currentPath), "sdmc:/3ds");
-                    scanDirectory(currentPath, 1);
-                    page = PAGE_APPS;
+                    snprintf(path, sizeof(path), "sdmc:/3ds");
+                    scan(path, 1);
+                    page = APPS;
                 }
                 else if (selected == 2)
-                    page = PAGE_SYSTEM;
+                    page = VAULT;
                 else if (selected == 3)
+                    page = THEMES;
+                else if (selected == 4)
+                    page = SYSTEM;
+                else if (selected == 5)
                 {
                     selected = 0;
-                    page = PAGE_SETTINGS;
+                    page = SETTINGS;
                 }
+                else if (selected == 6 && advancedUnlocked)
+                    page = ADVANCED;
+                else if (selected == 7)
+                    page = ABOUT;
                 else
-                    page = PAGE_ABOUT;
+                    statusSet("Hold L + R + X + Y to unlock Advanced Tools.");
 
-                if (page != PAGE_SETTINGS)
-                    selected = 0;
+                selected = page == SETTINGS || page == THEMES ? selected : 0;
                 dirty = 1;
             }
         }
-        else if (page == PAGE_FILES || page == PAGE_APPS)
+        else if (page == FILES || page == APPS)
         {
-            int parentOffset = page == PAGE_FILES && strcmp(currentPath, "sdmc:/") != 0;
-            int total = entryCount + parentOffset;
-
-            if (keys & KEY_DOWN)
-            {
-                moveSelection(1, total);
-                dirty = 1;
-            }
-            if (keys & KEY_UP)
-            {
-                moveSelection(-1, total);
-                dirty = 1;
-            }
-            if (keys & KEY_A)
-                openSelected(page == PAGE_APPS);
+            int parent = page == FILES && strcmp(path, "sdmc:/") != 0;
+            if (keys & KEY_UP) { move(-1, count + parent); dirty = 1; }
+            if (keys & KEY_DOWN) { move(1, count + parent); dirty = 1; }
+            if (keys & KEY_A) openEntry(page == APPS);
             if (keys & KEY_B)
             {
-                if (page == PAGE_APPS)
-                    page = PAGE_HOME;
-                else if (strcmp(currentPath, "sdmc:/") == 0)
-                    page = PAGE_HOME;
+                if (page == APPS || !strcmp(path, "sdmc:/"))
+                    page = HOME;
                 else
                 {
-                    char *lastSlash = strrchr(currentPath, '/');
-                    if (lastSlash && lastSlash > currentPath + 5)
-                        *lastSlash = '\0';
-                    else
-                        snprintf(currentPath, sizeof(currentPath), "sdmc:/");
-                    scanDirectory(currentPath, 0);
+                    parentFolder();
+                    scan(path, 0);
                 }
                 selected = 0;
-                scrollOffset = 0;
+                scroll = 0;
                 dirty = 1;
             }
         }
-        else if (page == PAGE_SETTINGS)
+        else if (page == DETAILS)
         {
-            if (keys & KEY_UP)
+            if (keys & KEY_X)
             {
-                selected = (selected + 1) % 2;
+                if (copyToVault(detail))
+                    statusSet("Backup copy imported into Save Vault.");
+                else
+                    statusSet("Import failed. Check file and SD space.");
                 dirty = 1;
             }
-            if (keys & KEY_DOWN)
+            if (keys & KEY_B)
             {
-                selected = (selected + 1) % 2;
+                page = previousPage;
                 dirty = 1;
             }
+        }
+        else if (page == SETTINGS)
+        {
+            if (keys & KEY_UP) { selected = (selected + 1) % 2; dirty = 1; }
+            if (keys & KEY_DOWN) { selected = (selected + 1) % 2; dirty = 1; }
             if (keys & KEY_A)
             {
                 if (selected == 0)
-                    showHints = !showHints;
+                    hints = !hints;
                 else
-                    accent = (accent + 1) % 3;
-                saveSettings();
+                {
+                    page = THEMES;
+                    selected = themeIndex;
+                }
+                settingsSave();
                 dirty = 1;
             }
-            if (keys & KEY_B)
-            {
-                page = PAGE_HOME;
-                selected = 0;
-                dirty = 1;
-            }
+            if (keys & KEY_B) { page = HOME; selected = 0; dirty = 1; }
         }
-        else
+        else if (page == THEMES)
         {
-            if (keys & KEY_B)
+            if (keys & KEY_UP) { move(-1, 6); dirty = 1; }
+            if (keys & KEY_DOWN) { move(1, 6); dirty = 1; }
+            if (keys & KEY_A)
             {
-                if (page == PAGE_DETAIL)
-                    page = previousPage;
-                else
-                    page = PAGE_HOME;
+                themeIndex = selected;
+                settingsSave();
+                statusSet("Theme applied and saved.");
+                dirty = 1;
+            }
+            if (keys & KEY_B) { page = HOME; selected = 0; dirty = 1; }
+        }
+        else if (page == VAULT)
+        {
+            if (keys & KEY_A)
+            {
+                snprintf(path, sizeof(path), "sdmc:/3ds/CINTENDO/SaveVault");
+                scan(path, 0);
+                page = FILES;
+                dirty = 1;
+            }
+            if (keys & KEY_B) { page = HOME; selected = 0; dirty = 1; }
+        }
+        else if (page == ADVANCED || page == SYSTEM || page == ABOUT)
+        {
+            if (keys & KEY_B) { page = HOME; selected = 0; dirty = 1; }
+            if (page == ADVANCED && (keys & KEY_A))
+            {
+                snprintf(path, sizeof(path), "sdmc:/3ds/CINTENDO");
+                scan(path, 0);
+                page = FILES;
                 dirty = 1;
             }
         }
@@ -621,7 +735,6 @@ int main(void)
             draw();
             dirty = 0;
         }
-
         gspWaitForVBlank();
     }
 
