@@ -96,6 +96,10 @@ static const char *homeLabels[] = {
 };
 
 
+static void statusSet(const char *value);
+static void ensureFolders(void);
+static int hasExtension(const char *name, const char *extension);
+
 static int validPluginId(const char *id)
 {
     static const char *allowed[] = {"battery","clock","storage","vault","filetypes","config","theme","folders","sdcheck","about"};
