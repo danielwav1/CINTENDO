@@ -1,0 +1,4 @@
+CINTENDO_PLUGIN_V1
+id=sdcheck
+name=SD Health Check
+description=Checks that CINTENDO folders exist on the SD card.
