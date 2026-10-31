@@ -1,0 +1,4 @@
+CINTENDO_PLUGIN_V1
+id=config
+name=Config Inspector
+description=Shows current CINTENDO settings and config path.
