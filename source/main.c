@@ -703,28 +703,264 @@ static void drawAdvanced(void)
     footer();
 }
 
+
+static u32 uiAccent(void)
+{
+    static const u32 accents[] = {
+        0xFFE64A4A, 0xFFE85BAA, 0xFFDB4545,
+        0xFF9164E8, 0xFF35A9D6, 0xFFE39A42
+    };
+    return accents[themeIndex >= 0 && themeIndex < 6 ? themeIndex : 0];
+}
+
+static void uiRect(float x, float y, float w, float h, u32 color)
+{
+    C2D_DrawRectSolid(x, y, 0.1f, w, h, 7.0f, color);
+}
+
+static void uiCard(float x, float y, float w, float h, const char *icon, const char *title, const char *subtitle, int active, u32 accent)
+{
+    uiRect(x, y, w, h, active ? 0xFF39445B : 0xFF202838);
+    uiRect(x + 5, y + 5, 31, 31, accent);
+    launcherTextDraw(icon, x + 20.5f, y + 11, 0.65f);
+    launcherTextDraw(title, x + w * 0.59f, y + 8, 0.42f);
+    launcherTextDraw(subtitle, x + w * 0.59f, y + 25, 0.27f);
+}
+
+static void uiFrame(const char *section)
+{
+    C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
+    C2D_SceneBegin(GFX_TOP);
+    C2D_DrawRectSolid(0, 0, 0, 400, 240, 0, 0xFF101622);
+    uiRect(0, 0, 400, 34, 0xFF202A3B);
+    uiRect(12, 7, 4, 20, uiAccent());
+    launcherTextDraw("CINTENDO", 83, 9, 0.58f);
+    launcherTextDraw(section, 319, 11, 0.39f);
+    uiRect(14, 226, 372, 2, 0xFF344056);
+}
+
+static void uiBottom(const char *title, const char *line1, const char *line2, const char *line3)
+{
+    C2D_SceneBegin(GFX_BOTTOM);
+    C2D_DrawRectSolid(0, 0, 0, 320, 240, 0, 0xFF101622);
+    uiRect(12, 12, 296, 43, 0xFF202A3B);
+    launcherTextDraw(title, 160, 24, 0.52f);
+    if (line1) launcherTextDraw(line1, 160, 82, 0.39f);
+    if (line2) launcherTextDraw(line2, 160, 112, 0.39f);
+    if (line3) launcherTextDraw(line3, 160, 142, 0.39f);
+    launcherTextDraw("CINTENDO  |  danielwav1", 160, 210, 0.31f);
+}
+
+static void drawGraphicalHome(void)
+{
+    static const char *labels[] = {
+        "Files", "Homebrew", "Save Vault",
+        "Themes", "System", "Settings",
+        "Plugins", "About", "Music"
+    };
+    static const char *symbols[] = {"FM", "HB", "SV", "TH", "SYS", "SET", "PLG", "i", "M"};
+    static const u32 colors[] = {
+        0xFF8A55D7, 0xFF36A5D9, 0xFF36B58B,
+        0xFFDB568B, 0xFF4774D8, 0xFF657080,
+        0xFFB84DDB, 0xFF4B91A8, 0xFFE29A36
+    };
+    uiFrame("HOME");
+    for (int i = 0; i < 9; i++)
+    {
+        float x = 17.0f + (float)(i % 3) * 124.0f;
+        float y = 43.0f + (float)(i / 3) * 59.0f;
+        uiCard(x, y, 116, 52, symbols[i], labels[i], i == selected ? "SELECTED" : "OPEN", i == selected, colors[i]);
+    }
+    uiBottom(labels[selected], "D-PAD  Navigate", "A  Open selected app", "B  Back   START  Exit");
+    C3D_FrameEnd(0);
+}
+
+static void drawGraphicalList(int appMode)
+{
+    char subtitle[64];
+    uiFrame(appMode ? "HOMEBREW LIBRARY" : page == VAULT ? "SAVE VAULT" : "FILE MANAGER");
+    launcherTextDraw(path, 200, 42, 0.31f);
+    int parent = !appMode && page == FILES && strcmp(path, "sdmc:/") != 0;
+    int total = count + parent;
+    int first = scroll;
+    int shown = 0;
+    for (int i = first; i < total && shown < 6; i++, shown++)
+    {
+        int entryIndex = i - parent;
+        const char *name = parent && i == 0 ? ".." : entries[entryIndex].name;
+        const char *icon = parent && i == 0 ? "UP" : entries[entryIndex].directory ? "DIR" : hasExtension(name, ".3dsx") ? "3DS" : "FILE";
+        char size[24];
+        if (parent && i == 0) snprintf(size, sizeof(size), "Parent folder");
+        else if (entries[entryIndex].directory) snprintf(size, sizeof(size), "Folder");
+        else formatSize(entries[entryIndex].size, size, sizeof(size));
+        uiCard(17, 62 + shown * 26, 366, 23, icon, name, size, selected == i, selected == i ? uiAccent() : 0xFF52627B);
+    }
+    snprintf(subtitle, sizeof(subtitle), "%d items", count);
+    uiBottom(appMode ? "APP LIBRARY" : page == VAULT ? "SAVE VAULT" : "FILE BROWSER", subtitle, "UP/DOWN  Select   A  Open", "B  Back");
+    C3D_FrameEnd(0);
+}
+
+static void drawGraphicalPage(void)
+{
+    if (page == HOME)
+    {
+        drawGraphicalHome();
+        return;
+    }
+    if (page == FILES || page == APPS)
+    {
+        drawGraphicalList(page == APPS);
+        return;
+    }
+
+    const char *section = "CINTENDO";
+    const char *bottomTitle = "CONTROL CENTER";
+    const char *line1 = "A  Select";
+    const char *line2 = "B  Back";
+    const char *line3 = "Made by danielwav1";
+    uiFrame("CONTROL CENTER");
+
+    if (page == SETTINGS)
+    {
+        section = "SETTINGS";
+        const char *names[] = {"Control hints", "Dark mode", "Theme Studio"};
+        const char *values[] = {hints ? "ON" : "OFF", darkMode ? "ON" : "OFF", themes[themeIndex].name};
+        for (int i = 0; i < 3; i++) uiCard(25, 58 + i * 53, 350, 43, i == 0 ? "KEY" : i == 1 ? "UI" : "TH", names[i], values[i], selected == i, uiAccent());
+        bottomTitle = "PREFERENCES";
+        line1 = "UP/DOWN  Select setting";
+        line2 = "A  Toggle / open Theme Studio";
+        line3 = "B  Home";
+    }
+    else if (page == THEMES)
+    {
+        section = "THEME STUDIO";
+        for (int i = 0; i < 6; i++) uiCard(25, 43 + i * 29, 350, 25, "TH", themes[i].name, themes[i].tagline, selected == i, uiAccent());
+        bottomTitle = "LIVE THEME PREVIEW";
+        line1 = themes[selected].name;
+        line2 = themes[selected].tagline;
+        line3 = "A  Apply and save";
+    }
+    else if (page == SYSTEM)
+    {
+        struct statvfs info;
+        unsigned long long total = 0, freeBytes = 0;
+        if (statvfs("sdmc:/", &info) == 0) { total = (unsigned long long)info.f_blocks * info.f_frsize; freeBytes = (unsigned long long)info.f_bavail * info.f_frsize; }
+        char a[40], b[40], c[40];
+        formatSize(total, a, sizeof(a)); formatSize(freeBytes, b, sizeof(b)); formatSize(total >= freeBytes ? total - freeBytes : 0, c, sizeof(c));
+        section = "SYSTEM DASHBOARD";
+        uiCard(25, 59, 350, 45, "3DS", "Nintendo 3DS family", "CINTENDO homebrew environment", 1, uiAccent());
+        uiCard(25, 111, 350, 45, "SD", "SD card storage", a, 0, 0xFF36A5D9);
+        uiCard(25, 163, 350, 45, "FREE", "Available space", b, 0, 0xFF36B58B);
+        bottomTitle = "STORAGE DIAGNOSTICS";
+        line1 = c;
+        line2 = "Read-only SD statistics";
+        line3 = "No NAND or firmware changes";
+    }
+    else if (page == VAULT)
+    {
+        section = "SAVE VAULT";
+        uiCard(25, 61, 350, 48, "SV", "Backup archive", "Ordinary files stored on SD", 1, uiAccent());
+        uiCard(25, 119, 350, 48, "SD", "SaveVault folder", "sdmc:/3ds/CINTENDO/SaveVault", 0, 0xFF36B58B);
+        bottomTitle = "SAVE DATA SAFETY";
+        line1 = "A  Open backup folder";
+        line2 = "Backups are not restored automatically";
+        line3 = "Use Checkpoint or JKSM to restore";
+    }
+    else if (page == ABOUT)
+    {
+        section = "ABOUT";
+        uiCard(25, 65, 350, 54, "C", "CINTENDO 1.5", "Your 3DS. Your way.", 1, uiAccent());
+        uiCard(25, 129, 350, 54, "DEV", "Made by danielwav1", "github.com/danielwav1/CINTENDO", 0, 0xFF36A5D9);
+        bottomTitle = "PROJECT";
+        line1 = "Built with devkitPro and libctru";
+        line2 = "Independent community homebrew";
+        line3 = "Not affiliated with Nintendo";
+    }
+    else if (page == DETAILS)
+    {
+        section = "FILE DETAILS";
+        struct stat info;
+        char size[32] = "Unknown";
+        if (stat(detail, &info) == 0) formatSize((unsigned long long)info.st_size, size, sizeof(size));
+        uiCard(25, 65, 350, 54, "FILE", strrchr(detail, '/') ? strrchr(detail, '/') + 1 : detail, size, 1, uiAccent());
+        uiCard(25, 129, 350, 54, "PATH", "Selected file", detail, 0, 0xFF36A5D9);
+        bottomTitle = "FILE ACTIONS";
+        line1 = "X  Copy file into Save Vault";
+        line2 = "B  Return to previous folder";
+        line3 = "Copy only; no game save restore";
+    }
+    else if (page == ADVANCED)
+    {
+        section = "ADVANCED TOOLS";
+        uiCard(25, 65, 350, 54, "PLG", "Plugin Key Center", "Manage local plugin key files", selected == 0, uiAccent());
+        uiCard(25, 129, 350, 54, "RST", "Reset CINTENDO", "Reset preferences and plugin states", selected == 1, 0xFFB84D4D);
+        bottomTitle = "ADVANCED MODE";
+        line1 = "L + R + X + Y  Unlock";
+        line2 = "A  Open Plugin Center";
+        line3 = "Y  Reset   |   B  Home";
+    }
+    else if (page == PLUGINS)
+    {
+        scanPlugins();
+        section = "PLUGIN KEY CENTER";
+        for (int i = 0; i < pluginCount && i < 6; i++) uiCard(17, 43 + i * 29, 366, 25, "PLG", plugins[i].name, plugins[i].enabled ? "ENABLED" : "DISABLED", selected == i, plugins[i].enabled ? 0xFF36B58B : 0xFF657080);
+        if (!pluginCount) uiCard(25, 80, 350, 55, "!", "No plugins found", "Add matching .cplug and .cscript files", 1, 0xFFB84D4D);
+        bottomTitle = "PLUGIN CONTROLS";
+        line1 = "A  Enable / disable";
+        line2 = "X  Plugin details";
+        line3 = "B  Advanced Tools";
+    }
+    else if (page == PLUGIN_DETAILS)
+    {
+        section = "PLUGIN DETAILS";
+        uiCard(25, 60, 350, 56, "PLG", activePlugin.name, activePlugin.enabled ? "ENABLED" : "DISABLED", 1, uiAccent());
+        uiCard(25, 126, 350, 56, "ID", activePlugin.id, activePlugin.description, 0, 0xFF36A5D9);
+        bottomTitle = "PLUGIN ACTIONS";
+        line1 = "A  Enable / disable";
+        line2 = "X  Execute allowlisted action";
+        line3 = "B  Plugin list";
+    }
+    else if (page == RESET_CONFIRM)
+    {
+        section = "RESET CONFIRMATION";
+        uiCard(25, 72, 350, 58, "!", "Reset CINTENDO?", "Save Vault backups will be kept", 1, 0xFFB84D4D);
+        bottomTitle = "CONFIRM";
+        line1 = "Y  Confirm reset";
+        line2 = "B  Cancel";
+        line3 = "Your backup archive is preserved";
+    }
+    else if (page == MUSIC)
+    {
+        section = "CINTENDO MUSIC";
+        for (int i = 0; i < musicCount && i < 6; i++) uiCard(17, 43 + i * 29, 366, 25, "♫", musicFiles[i], "PCM WAV", selected == i, uiAccent());
+        if (!musicCount) uiCard(25, 80, 350, 55, "M", "Music library is empty", "Add PCM WAV files to CINTENDO/Music", 1, 0xFFE29A36);
+        bottomTitle = musicPlaying ? musicPaused ? "PLAYER PAUSED" : "PLAYER PLAYING" : "PLAYER STOPPED";
+        line1 = "A  Play selected WAV";
+        line2 = "X  Pause / resume";
+        line3 = "Y  Stop   |   B  Home";
+    }
+
+    if (section[0]) {
+        C2D_SceneBegin(GFX_BOTTOM);
+        C2D_DrawRectSolid(0, 0, 0, 320, 240, 0, 0xFF101622);
+        uiRect(12, 12, 296, 43, 0xFF202A3B);
+        launcherTextDraw(bottomTitle, 160, 24, 0.52f);
+        launcherTextDraw(line1, 160, 82, 0.36f);
+        launcherTextDraw(line2, 160, 112, 0.36f);
+        launcherTextDraw(line3, 160, 142, 0.36f);
+        launcherTextDraw(status, 160, 177, 0.29f);
+        launcherTextDraw("CINTENDO  |  danielwav1", 160, 210, 0.31f);
+    }
+    C3D_FrameEnd(0);
+}
+
 static void draw(void)
 {
-    if (page == HOME) drawHome();
-    else if (page == MUSIC) drawMusic();
-    else if (page == FILES) drawList(0);
-    else if (page == APPS) drawList(1);
-    else if (page == VAULT) drawVault();
-    else if (page == SYSTEM) drawSystem();
-    else if (page == SETTINGS) drawSettings();
-    else if (page == THEMES) drawThemes();
-    else if (page == ABOUT) drawAbout();
-    else if (page == DETAILS) drawDetails();
-    else if (page == ADVANCED) drawAdvanced();
-    else if (page == PLUGINS) drawPlugins();
-    else if (page == PLUGIN_DETAILS) drawPluginDetails();
-    else if (page == RESET_CONFIRM) { consoleSelect(&top); consoleClear(); header("RESET CINTENDO"); printf("\n  Reset settings and remove installed plugins?\n\n  Save Vault backups will be kept.\n"); consoleSelect(&bottom); consoleClear(); header("CONFIRMATION"); printf("  Y: Confirm reset\n  B: Cancel"); footer(); }
-    if (page != HOME)
-    {
-        gfxFlushBuffers();
-        gfxSwapBuffers();
-    }
+    drawGraphicalPage();
+    gfxFlushBuffers();
+    gfxSwapBuffers();
 }
+
 
 static void move(int direction, int total)
 {
