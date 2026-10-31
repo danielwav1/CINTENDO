@@ -705,7 +705,7 @@ static void drawSystem(void)
     consoleSelect(&top);
     consoleClear();
     header("SYSTEM DASHBOARD");
-    printf("\n  DEVICE\n  Nintendo 3DS family\n  CINTENDO 1.1\n");
+    printf("\n  DEVICE\n  Nintendo 3DS family\n  CINTENDO 1.3\n");
     printf("\n  STORAGE\n  Total: %s\n  Used:  %s\n  Free:  %s\n",
            totalText, usedText, freeText);
     printf("\n  SD mount: sdmc:/\n");
@@ -746,7 +746,7 @@ static void drawAbout(void)
     consoleSelect(&top);
     consoleClear();
     header("ABOUT CINTENDO");
-    printf("\n  CINTENDO 1.1\n");
+    printf("\n  CINTENDO 1.3\n");
     printf("  A homebrew utility for Nintendo 3DS.\n\n");
     printf("  Made by danielwav1\n");
     printf("  github.com/danielwav1/CINTENDO\n\n");
