@@ -1,0 +1,4 @@
+CINTENDO_PLUGIN_V1
+id=storage
+name=Storage Inspector
+description=Shows available SD card space.
