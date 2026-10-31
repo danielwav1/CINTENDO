@@ -651,12 +651,12 @@ static void drawAdvanced(void)
     consoleSelect(&top);
     consoleClear();
     header("ADVANCED TOOLS");
-    printf("\n  [READ-ONLY] System diagnostics\n");
-    printf("  [READ-ONLY] SD mount information\n");
-    printf("  [SAFE]      Open Save Vault\n");
-    printf("  [SAFE]      View CINTENDO config\n\n");
-    printf("  Privilege status: standard homebrew\n");
-    printf("  NAND/root access: not available\n");
+    printf("\n  [TOOLS] Plugin Center\n");
+    printf("  [RESET] Reset CINTENDO settings\n\n");
+    printf("  A: Open Plugin Center\n");
+    printf("  Y: Reset CINTENDO\n");
+    printf("  Privilege: standard homebrew only\n");
+    printf("  NAND/root access: unavailable\n");
     consoleSelect(&bottom);
     consoleClear();
     header("ADVANCED MODE");
