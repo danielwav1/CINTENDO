@@ -1,0 +1,4 @@
+CINTENDO_PLUGIN_V1
+id=filetypes
+name=File Type Guide
+description=Lists file types recognized by the file browser.
