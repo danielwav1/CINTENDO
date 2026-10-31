@@ -62,6 +62,8 @@ static const char *black = "\x1b[30m";
 static PrintConsole top;
 static PrintConsole bottom;
 static C2D_TextBuf launcherText;
+static C3D_RenderTarget *topTarget;
+static C3D_RenderTarget *bottomTarget;
 static Entry entries[MAX_ENTRIES];
 static int count;
 static int selected;
@@ -513,9 +515,9 @@ static void drawHome(void)
         0xFFB84DDB, 0xFF4B91A8, 0xFFE29A36
     };
     C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
-    C2D_SceneBegin(GFX_TOP);
-    C2D_DrawRectSolid(0, 0, 0, 400, 240, 0, C2D_Color32(14, 17, 25, 255));
-    C2D_DrawRectSolid(0, 0, 0.1f, 400, 35, 0, C2D_Color32(25, 30, 43, 255));
+    C2D_SceneBegin(topTarget);
+    C2D_DrawRectSolid(0, 0, 0, 400, 240, C2D_Color32(14, 17, 25, 255));
+    C2D_DrawRectSolid(0, 0, 0.1f, 400, 35, C2D_Color32(25, 30, 43, 255));
     launcherTextDraw("CINTENDO", 66, 10, 0.65f);
     launcherTextDraw("HOME", 350, 12, 0.45f);
     for (int i = 0; i < 9; i++)
@@ -525,22 +527,22 @@ static void drawHome(void)
         u32 tile = colors[i];
         if (selected == i)
         {
-            C2D_DrawRectSolid(x - 3, y - 3, 0.2f, 112, 55, 7, C2D_Color32(245, 245, 255, 255));
-            C2D_DrawRectSolid(x, y, 0.3f, 106, 49, 6, tile);
+            C2D_DrawRectSolid(x - 3, y - 3, 0.2f, 112, 55, C2D_Color32(245, 245, 255, 255));
+            C2D_DrawRectSolid(x, y, 0.3f, 106, 49, tile);
         }
         else
-            C2D_DrawRectSolid(x, y, 0.2f, 106, 49, 6, tile);
+            C2D_DrawRectSolid(x, y, 0.2f, 106, 49, tile);
         launcherTextDraw(symbols[i], x + 53, y + 5, 0.9f);
         launcherTextDraw(labels[i], x + 53, y + 31, 0.36f);
     }
-    C2D_DrawRectSolid(0, 232, 0.2f, 400, 8, 0, C2D_Color32(35, 42, 58, 255));
-    C2D_SceneBegin(GFX_BOTTOM);
-    C2D_DrawRectSolid(0, 0, 0, 320, 240, 0, C2D_Color32(14, 17, 25, 255));
-    C2D_DrawRectSolid(12, 12, 0.1f, 296, 88, 8, C2D_Color32(25, 30, 43, 255));
+    C2D_DrawRectSolid(0, 232, 0.2f, 400, 8, C2D_Color32(35, 42, 58, 255));
+    C2D_SceneBegin(bottomTarget);
+    C2D_DrawRectSolid(0, 0, 0, 320, 240, C2D_Color32(14, 17, 25, 255));
+    C2D_DrawRectSolid(12, 12, 0.1f, 296, 88, C2D_Color32(25, 30, 43, 255));
     launcherTextDraw("APP LAUNCHER", 160, 25, 0.5f);
     launcherTextDraw(labels[selected], 160, 54, 0.8f);
     launcherTextDraw("Your 3DS. Your apps.", 160, 78, 0.38f);
-    C2D_DrawRectSolid(12, 113, 0.1f, 296, 105, 8, C2D_Color32(25, 30, 43, 255));
+    C2D_DrawRectSolid(12, 113, 0.1f, 296, 105, C2D_Color32(25, 30, 43, 255));
     launcherTextDraw("D-PAD  Navigate apps", 160, 126, 0.43f);
     launcherTextDraw("A      Open selected app", 160, 148, 0.43f);
     launcherTextDraw("B      Back     START Exit", 160, 170, 0.43f);
@@ -777,7 +779,7 @@ static u32 uiAccent(void)
 
 static void uiRect(float x, float y, float w, float h, u32 color)
 {
-    C2D_DrawRectSolid(x, y, 0.1f, w, h, 7.0f, color);
+    C2D_DrawRectSolid(x, y, 0.1f, w, h, color);
 }
 
 static void uiCard(float x, float y, float w, float h, const char *icon, const char *title, const char *subtitle, int active, u32 accent)
@@ -797,8 +799,8 @@ static void uiCard(float x, float y, float w, float h, const char *icon, const c
 static void uiFrame(const char *section)
 {
     C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
-    C2D_SceneBegin(GFX_TOP);
-    C2D_DrawRectSolid(0, 0, 0, 400, 240, 0, 0xFF101622);
+    C2D_SceneBegin(topTarget);
+    C2D_DrawRectSolid(0, 0, 0, 400, 240, 0xFF101622);
     uiRect(0, 0, 400, 34, 0xFF202A3B);
     uiRect(12, 7, 4, 20, uiAccent());
     launcherTextDraw("CINTENDO", 83, 9, 0.58f);
@@ -808,8 +810,8 @@ static void uiFrame(const char *section)
 
 static void uiBottom(const char *title, const char *line1, const char *line2, const char *line3)
 {
-    C2D_SceneBegin(GFX_BOTTOM);
-    C2D_DrawRectSolid(0, 0, 0, 320, 240, 0, 0xFF101622);
+    C2D_SceneBegin(bottomTarget);
+    C2D_DrawRectSolid(0, 0, 0, 320, 240, 0xFF101622);
     uiRect(12, 12, 296, 43, 0xFF202A3B);
     launcherTextDraw(title, 160, 24, 0.52f);
     if (line1) launcherTextDraw(line1, 160, 82, 0.39f);
@@ -1009,8 +1011,8 @@ static void drawGraphicalPage(void)
 
     if (section[0]) {
         launcherTextDraw(section, 319, 11, 0.39f);
-        C2D_SceneBegin(GFX_BOTTOM);
-        C2D_DrawRectSolid(0, 0, 0, 320, 240, 0, 0xFF101622);
+        C2D_SceneBegin(bottomTarget);
+        C2D_DrawRectSolid(0, 0, 0, 320, 240, 0xFF101622);
         uiRect(12, 12, 296, 43, 0xFF202A3B);
         launcherTextDraw(bottomTitle, 160, 24, 0.52f);
         launcherTextDraw(line1, 160, 82, 0.36f);
@@ -1149,6 +1151,8 @@ int main(void)
     gfxInitDefault();
     C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
     C2D_Init(C2D_DEFAULT_MAX_OBJECTS);
+    topTarget = C2D_CreateScreenTarget(GFX_TOP, GFX_LEFT);
+    bottomTarget = C2D_CreateScreenTarget(GFX_BOTTOM, GFX_LEFT);
     launcherText = C2D_TextBufNew(4096);
     ndspInit();
     consoleInit(GFX_TOP, &top);
