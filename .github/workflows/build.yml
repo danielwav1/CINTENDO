@@ -17,6 +17,9 @@ jobs:
       - name: Verify Citro2D
         run: dkp-pacman -Q citro2d
 
+      - name: Clean previous build outputs
+        run: make clean
+
       - name: Build CINTENDO
         run: make
 
