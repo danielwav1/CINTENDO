@@ -14,6 +14,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Citro2D
+        run: dkp-pacman -S --noconfirm 3ds-citro2d
+
       - name: Build CINTENDO
         run: make
 
