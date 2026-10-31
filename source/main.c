@@ -255,7 +255,7 @@ static void drawPluginDetails(void)
     consoleClear();
     header("PLUGIN RUNNER");
     if (strcmp(activePlugin.id, "battery") == 0)
-        printf("  Battery level: %d%%\\n", PTMU_GetBatteryLevel());
+        { u8 level = 0; PTMU_GetBatteryLevel(&level); printf("  Battery level: %u%%\\n", (unsigned)level); }
     else if (strcmp(activePlugin.id, "clock") == 0)
         printf("  System tick: %llu\\n", (unsigned long long)svcGetSystemTick());
     else if (strcmp(activePlugin.id, "storage") == 0)
@@ -295,7 +295,11 @@ static void drawPluginDetails(void)
     printf("\\n  B: Back");
     footer();
 }
-\nstatic void statusSet(const char *value)
+\nstatic void statusSet(const char *value);
+static void ensureFolders(void);
+static int hasExtension(const char *name, const char *extension);
+
+static void statusSet(const char *value)
 {
     snprintf(status, sizeof(status), "%s", value);
 }
