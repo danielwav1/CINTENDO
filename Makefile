@@ -32,7 +32,7 @@ include $(DEVKITARM)/3ds_rules
 #     - <libctru folder>/default_icon.png
 #---------------------------------------------------------------------------------
 TARGET		:=	$(notdir $(CURDIR))
-APP_TITLE	:=	CINTENDO 1.2
+APP_TITLE	:=	CINTENDO 1.3
 APP_DESCRIPTION	:=	3DS Homebrew Utility
 APP_AUTHOR	:=	danielwav1
 BUILD		:=	build
