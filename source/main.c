@@ -119,7 +119,7 @@ static int loadPluginFile(const char *full, Plugin *plugin)
     memset(plugin, 0, sizeof(*plugin));
     while (fgets(line, sizeof(line), file))
     {
-        line[strcspn(line, "\\r\n")] = 0;
+        line[strcspn(line, "\r\n")] = 0;
         if (strcmp(line, "CINTENDO_PLUGIN_V1") == 0)
             header = 1;
         else if (strncmp(line, "id=", 3) == 0)
