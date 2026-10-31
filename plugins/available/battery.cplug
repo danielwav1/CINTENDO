@@ -1,0 +1,4 @@
+CINTENDO_PLUGIN_V1
+id=battery
+name=Battery Monitor
+description=Shows the current battery percentage.
