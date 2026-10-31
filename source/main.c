@@ -79,6 +79,7 @@ static int advancedUnlocked;
 static int running = 1;
 static int dirty = 1;
 static int comboWasHeld;
+static unsigned int uiFrameCounter;
 static Page page = HOME;
 static Page previousPage = FILES;
 static char path[PATH_SIZE] = "sdmc:/";
@@ -362,8 +363,69 @@ static int compareEntries(const void *left, const void *right)
     return strcasecmp(a->name, b->name);
 }
 
+static void scanAppsRecursive(const char *root, const char *relative, int depth)
+{
+    if (depth > 5 || count >= MAX_ENTRIES)
+        return;
+
+    char folder[PATH_SIZE];
+    int folderLength = relative[0]
+        ? snprintf(folder, sizeof(folder), "%s/%s", root, relative)
+        : snprintf(folder, sizeof(folder), "%s", root);
+    if (folderLength < 0 || folderLength >= (int)sizeof(folder))
+        return;
+
+    DIR *dir = opendir(folder);
+    if (!dir)
+        return;
+
+    struct dirent *item;
+    while ((item = readdir(dir)) && count < MAX_ENTRIES)
+    {
+        if (!strcmp(item->d_name, ".") || !strcmp(item->d_name, ".."))
+            continue;
+
+        char childRelative[PATH_SIZE];
+        char full[PATH_SIZE];
+        int relativeLength = relative[0]
+            ? snprintf(childRelative, sizeof(childRelative), "%s/%s", relative, item->d_name)
+            : snprintf(childRelative, sizeof(childRelative), "%s", item->d_name);
+        int fullLength = snprintf(full, sizeof(full), "%s/%s", root, childRelative);
+        if (relativeLength < 0 || relativeLength >= (int)sizeof(childRelative) ||
+            fullLength < 0 || fullLength >= (int)sizeof(full))
+            continue;
+
+        struct stat info;
+        if (stat(full, &info) != 0)
+            continue;
+
+        if (S_ISDIR(info.st_mode))
+        {
+            scanAppsRecursive(root, childRelative, depth + 1);
+        }
+        else if (S_ISREG(info.st_mode) && hasExtension(item->d_name, ".3dsx"))
+        {
+            snprintf(entries[count].name, sizeof(entries[count].name), "%s", childRelative);
+            entries[count].directory = 0;
+            entries[count].size = (unsigned long long)info.st_size;
+            count++;
+        }
+    }
+    closedir(dir);
+}
+
 static int scan(const char *folder, int onlyApps)
 {
+    count = 0;
+    if (onlyApps)
+    {
+        scanAppsRecursive(folder, "", 0);
+        qsort(entries, count, sizeof(Entry), compareEntries);
+        selected = 0;
+        scroll = 0;
+        return 1;
+    }
+
     DIR *dir = opendir(folder);
     count = 0;
     if (!dir)
@@ -720,6 +782,11 @@ static void uiRect(float x, float y, float w, float h, u32 color)
 
 static void uiCard(float x, float y, float w, float h, const char *icon, const char *title, const char *subtitle, int active, u32 accent)
 {
+    if (active)
+    {
+        float border = (uiFrameCounter % 24U) < 12U ? 2.0f : 3.0f;
+        uiRect(x - border, y - border, w + border * 2.0f, h + border * 2.0f, uiAccent());
+    }
     uiRect(x, y, w, h, active ? 0xFF39445B : 0xFF202838);
     uiRect(x + 5, y + 5, 31, 31, accent);
     launcherTextDraw(icon, x + 20.5f, y + 11, 0.65f);
@@ -1336,6 +1403,11 @@ int main(void)
         {
             draw();
             dirty = 0;
+        }
+        if (page == HOME)
+        {
+            uiFrameCounter++;
+            dirty = 1;
         }
         gspWaitForVBlank();
     }
