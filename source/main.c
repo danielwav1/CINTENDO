@@ -549,6 +549,8 @@ static void formatSize(unsigned long long value, char *out, size_t size)
 
 static void header(const char *section)
 {
+    reset = darkMode ? "\\x1b[0m" : "\\x1b[30;47m";
+    printf("%s", reset);
     printf("%sCINTENDO%s  %s%s\n", themes[themeIndex].primary, reset,
            themes[themeIndex].secondary, section);
     printf("%s==============================================%s\n", themes[themeIndex].accent, reset);
