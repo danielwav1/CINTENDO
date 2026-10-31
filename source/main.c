@@ -43,9 +43,6 @@ static void drawDirectory(const char *path)
 
 static void drawTop(int page, int selected)
 {
-    consoleSelect(NULL);
-    consoleClear();
-
     printf("CINTENDO 1.0\n");
     printf("Your 3DS. Your way.\n");
     printf("--------------------------------\n");
@@ -102,9 +99,6 @@ static void drawTop(int page, int selected)
 
 static void drawBottom(int page)
 {
-    consoleSelect(NULL);
-    consoleClear();
-
     printf("CONTROLS\n");
     printf("--------------------------------\n");
 
@@ -172,6 +166,7 @@ int main(void)
             if (keys & KEY_A)
             {
                 page = selected + 1;
+                selected = 0;
                 redraw = 1;
             }
         }
