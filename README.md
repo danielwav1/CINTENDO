@@ -22,6 +22,10 @@ All launcher pages now use the same Citro2D graphical layout rather than switchi
 
 The current tile icons are drawn from built-in vector-style shapes and short labels, so the app does not depend on external icon packs or downloaded artwork.
 
+
+
+The Homebrew Library currently scans and displays `.3dsx` files from `sd:/3ds/`. Selecting an entry opens its details; launching another `.3dsx` directly from CINTENDO is not implemented yet and remains a separate development task.
+
 ## Plugin system
 
 CINTENDO uses two separate files for each plugin:
