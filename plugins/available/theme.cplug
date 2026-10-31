@@ -1,0 +1,4 @@
+CINTENDO_PLUGIN_V1
+id=theme
+name=Theme Inspector
+description=Shows the active theme and available presets.
