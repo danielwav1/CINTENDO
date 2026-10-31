@@ -6,7 +6,7 @@ CINTENDO is an independent Nintendo 3DS homebrew utility built with devkitPro an
 
 ## Features
 
-- Unified two-screen graphical launcher UI with selectable app tiles, icon badges, cards and matching control panels
+- Unified two-screen graphical launcher UI with selectable app tiles, icon badges, cards, animated selection highlight and matching control panels
 - Graphical file manager, homebrew library, Save Vault, themes, settings, diagnostics, plugin center and music player
 - Two-screen SD file browser
 - CINTENDO Music: local PCM WAV player with play, pause, resume and stop controls
@@ -24,7 +24,7 @@ The current tile icons are drawn from built-in vector-style shapes and short lab
 
 
 
-The Homebrew Library currently scans and displays `.3dsx` files from `sd:/3ds/`. Selecting an entry opens its details; launching another `.3dsx` directly from CINTENDO is not implemented yet and remains a separate development task.
+The Homebrew Library recursively scans folders below `sd:/3ds/` and displays discovered `.3dsx` files. Selecting an entry opens its details. Directly chain-loading another `.3dsx` from CINTENDO is not implemented; use the Homebrew Launcher to start a selected homebrew app.
 
 ## Plugin system
 
@@ -99,7 +99,7 @@ Use a devkitPro devkitARM environment:
 make
 ```
 
-GitHub Actions builds `CINTENDO.3dsx` and `CINTENDO.smdh` and uploads them as the `CINTENDO-3DS` artifact.
+GitHub Actions builds `CINTENDO.3dsx` and `CINTENDO.smdh`, then prepares an SD-card folder package with the app and matching starter plugin files. Download the `CINTENDO-Install` artifact from the latest successful workflow run. Copy the included `3ds` folder to the root of the SD card and merge folders if prompted.
 
 ## Credits
 
