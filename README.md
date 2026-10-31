@@ -1,4 +1,4 @@
-# CINTENDO 1.2
+# CINTENDO 1.3
 
 **Your 3DS. Your way.**
 
@@ -7,6 +7,8 @@ CINTENDO is an independent Nintendo 3DS homebrew utility built with devkitPro an
 ## Features
 
 - Two-screen homebrew interface and SD file browser
+- CINTENDO Music: local PCM WAV player with play, pause, resume and stop controls
+- Persistent Dark Mode enabled by default, with a Light Mode option in standard Settings
 - Homebrew library listing `.3dsx` files
 - Save Vault archive that preserves existing backup files
 - SD storage dashboard and six themes
@@ -14,6 +16,14 @@ CINTENDO is an independent Nintendo 3DS homebrew utility built with devkitPro an
 - Plugin Center with SD-card package installation and ten included utility plugins
 - Reset CINTENDO option for app preferences and installed plugins
 - Made by danielwav1
+
+## CINTENDO Music
+
+Copy compatible uncompressed PCM WAV files into `sd:/3ds/CINTENDO/Music/` and open **CINTENDO Music** from the home screen. The current player supports 8-bit or 16-bit PCM, mono or stereo, up to 8 MB per file. Use **A** to play the selected track, **X** to pause/resume, **Y** to stop, and **B** to return home. Playback is local; no streaming service or network connection is used. MP3, FLAC, album art, playlists, shuffle, repeat, and background playback are not implemented in this version.
+
+## Appearance settings
+
+Dark Mode is enabled by default and saved in `config.ini`. Switch between Dark Mode and Light Mode in the regular Settings screen. Theme presets remain available in Theme Studio.
 
 ## Advanced Tools
 
