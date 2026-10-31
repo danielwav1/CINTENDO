@@ -1,4 +1,4 @@
-# CINTENDO 1.4
+# CINTENDO 1.5
 
 **Your 3DS. Your way.**
 
@@ -6,13 +6,21 @@ CINTENDO is an independent Nintendo 3DS homebrew utility built with devkitPro an
 
 ## Features
 
-- Two-screen homebrew interface and SD file browser
+- Unified two-screen graphical launcher UI with selectable app tiles, icon badges, cards and matching control panels
+- Graphical file manager, homebrew library, Save Vault, themes, settings, diagnostics, plugin center and music player
+- Two-screen SD file browser
 - CINTENDO Music: local PCM WAV player with play, pause, resume and stop controls
 - Persistent Dark Mode enabled by default, with a Light Mode option
 - Homebrew library, Save Vault, storage dashboard and six themes
 - Advanced Tools protected by the L+R+X+Y interface toggle
 - Modular SD-card plugin key and script system
 - Made by danielwav1
+
+## Launcher interface
+
+All launcher pages now use the same Citro2D graphical layout rather than switching between the graphical home screen and terminal-style console pages. The home dashboard contains nine selectable cards for Files, Homebrew, Save Vault, Themes, System, Settings, Plugins, About and Music. Other pages use matching cards, status panels and on-screen control hints.
+
+The current tile icons are drawn from built-in vector-style shapes and short labels, so the app does not depend on external icon packs or downloaded artwork.
 
 ## Plugin system
 
