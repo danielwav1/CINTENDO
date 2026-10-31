@@ -18,11 +18,71 @@ int main(int argc, char* argv[])
 		hidScanInput();
 
 		// Your code goes here
-		u32 kDown = hidKeysDown();
-		if (kDown & KEY_START)
-			break; // break in order to return to hbmenu
-	}
+		
+#include <3ds.h>
+#include <stdio.h>
+#include <string.h>
 
-	gfxExit();
-	return 0;
+int main(void)
+{
+    gfxInitDefault();
+
+    consoleInit(GFX_TOP, NULL);
+    consoleInit(GFX_BOTTOM, NULL);
+
+    int selected = 0;
+    const char *items[] = {
+        "Applications",
+        "Files",
+        "System",
+        "Settings",
+        "About"
+    };
+
+    while (aptMainLoop())
+    {
+        hidScanInput();
+
+        u32 kDown = hidKeysDown();
+
+        if (kDown & KEY_DOWN)
+            selected = (selected + 1) % 5;
+
+        if (kDown & KEY_UP)
+            selected = (selected + 4) % 5;
+
+        if (kDown & KEY_START)
+            break;
+
+        consoleSelect(GFX_TOP);
+        consoleClear();
+
+        printf("\x1b[2;12HCINTENDO");
+        printf("\x1b[4;8HYour 3DS. Your way.");
+
+        for (int i = 0; i < 5; i++)
+        {
+            printf("\x1b[%d;10H%s %s",
+                8 + i * 2,
+                i == selected ? ">" : " ",
+                items[i]);
+        }
+
+        consoleSelect(GFX_BOTTOM);
+        consoleClear();
+
+        printf("\x1b[3;4HCINTENDO SYSTEM");
+        printf("\x1b[6;4HD-Pad: Navigate");
+        printf("\x1b[7;4HA: Select");
+        printf("\x1b[8;4HB: Back");
+        printf("\x1b[9;4HSTART: Exit");
+
+        gfxFlushBuffers();
+        gfxSwapBuffers();
+        gspWaitForVBlank();
+    }
+
+    gfxExit();
+    return 0;
 }
+
