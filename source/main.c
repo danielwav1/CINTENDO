@@ -495,7 +495,6 @@ static void footer(void)
 static void launcherTextDraw(const char *value, float x, float y, float scale)
 {
     C2D_Text text;
-    C2D_TextBufClear(launcherText);
     C2D_TextParse(&text, launcherText, value);
     C2D_TextOptimize(&text);
     C2D_DrawText(&text, C2D_AlignCenter, x, y, 0.5f, scale, scale);
@@ -871,6 +870,7 @@ static void drawGraphicalList(int appMode)
 
 static void drawGraphicalPage(void)
 {
+    C2D_TextBufClear(launcherText);
     if (page == HOME)
     {
         drawGraphicalHome();
