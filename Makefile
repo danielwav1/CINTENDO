@@ -32,6 +32,9 @@ include $(DEVKITARM)/3ds_rules
 #     - <libctru folder>/default_icon.png
 #---------------------------------------------------------------------------------
 TARGET		:=	$(notdir $(CURDIR))
+APP_TITLE	:=	CINTENDO 1.0
+APP_DESCRIPTION	:=	Your 3DS. Your way.
+APP_AUTHOR	:=	danielwav1
 BUILD		:=	build
 SOURCES		:=	source
 DATA		:=	data
