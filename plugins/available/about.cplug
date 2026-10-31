@@ -1,0 +1,4 @@
+CINTENDO_PLUGIN_V1
+id=about
+name=Plugin API Info
+description=Displays plugin API and developer information.
