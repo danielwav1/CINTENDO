@@ -2,18 +2,22 @@
 
 **Your 3DS. Your way.**
 
-CINTENDO is a homebrew application for the Nintendo 3DS family, built with devkitPro and libctru.
+CINTENDO is a Nintendo 3DS homebrew utility built with devkitPro and libctru.
 
 ## Features
 
-- Home menu with D-pad navigation
-- Applications page listing entries in `sdmc:/3ds`
-- Read-only SD card root directory viewer
-- Basic system and environment information
-- Settings page with a control-hints toggle
-- About page with developer attribution
+- D-pad controlled home menu
+- SD card file manager with folder navigation
+- File details including type and size
+- Homebrew library that filters and lists `.3dsx` files in `sdmc:/3ds`
+- System dashboard with SD card capacity, used space and free space
+- Settings for control hints and accent color
+- Settings are saved to `sdmc:/3ds/CINTENDO/config.ini`
+- Two-screen interface and developer credits
 
-The Applications page currently lists homebrew files only. It does not launch them. The SD card browser is read-only and does not modify files.
+## Current limitations
+
+The Homebrew Library discovers and displays `.3dsx` files but does not launch them. The file manager is currently read-only: it does not copy, move, rename or delete files. System information is limited to information safely available to this homebrew application.
 
 ## Install
 
@@ -21,20 +25,27 @@ Copy `CINTENDO.3dsx` to:
 
 `sd:/3ds/CINTENDO/CINTENDO.3dsx`
 
-Then launch CINTENDO from the Homebrew Launcher.
+Launch it from the Homebrew Launcher.
+
+## Controls
+
+- D-Pad: Navigate
+- A: Open or select
+- B: Go back
+- START: Exit
 
 ## Build
 
-Build in a devkitPro devkitARM environment:
+Use a devkitPro devkitARM environment:
 
 ```sh
 make
 ```
 
-GitHub Actions builds the application and uploads the `.3dsx` and `.smdh` files as an artifact.
+GitHub Actions builds `CINTENDO.3dsx` and `CINTENDO.smdh` and uploads them as the `CINTENDO-3DS` artifact.
 
 ## Credits
 
 Made by **danielwav1**.
 
-Repository: https://github.com/danielwav1/CINTENDO
+https://github.com/danielwav1/CINTENDO
