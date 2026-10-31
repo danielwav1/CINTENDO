@@ -496,7 +496,6 @@ static void launcherTextDraw(const char *value, float x, float y, float scale)
 {
     C2D_Text text;
     C2D_TextParse(&text, launcherText, value);
-    C2D_TextOptimize(&text);
     C2D_DrawText(&text, C2D_AlignCenter, x, y, 0.5f, scale, scale);
 }
 
@@ -1153,7 +1152,7 @@ int main(void)
     C2D_Init(C2D_DEFAULT_MAX_OBJECTS);
     topTarget = C2D_CreateScreenTarget(GFX_TOP, GFX_LEFT);
     bottomTarget = C2D_CreateScreenTarget(GFX_BOTTOM, GFX_LEFT);
-    launcherText = C2D_TextBufNew(4096);
+    launcherText = C2D_TextBufNew(16384);
     ndspInit();
     consoleInit(GFX_TOP, &top);
     consoleInit(GFX_BOTTOM, &bottom);
