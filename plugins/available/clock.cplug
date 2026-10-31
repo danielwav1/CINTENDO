@@ -1,0 +1,4 @@
+CINTENDO_PLUGIN_V1
+id=clock
+name=System Clock
+description=Displays the system tick counter for diagnostics.
