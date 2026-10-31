@@ -112,6 +112,9 @@ static void scanMusic(void);
 static void drawMusic(void);
 static void stopMusic(void);
 static int playMusicFile(const char *name);
+static void settingsSave(void);
+static void header(const char *section);
+static void footer(void);
 
 static int validPluginId(const char *id)
 {
