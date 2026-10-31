@@ -542,6 +542,13 @@ static int copyToVault(const char *source)
     if (snprintf(destination, sizeof(destination), "sdmc:/3ds/CINTENDO/SaveVault/%s", name) >= (int)sizeof(destination))
         return 0;
 
+    if (strcmp(source, destination) == 0)
+        return 0;
+
+    struct stat existing;
+    if (stat(destination, &existing) == 0)
+        return 0;
+
     FILE *input = fopen(source, "rb");
     if (!input)
         return 0;
@@ -636,7 +643,8 @@ int main(void)
                 else
                     statusSet("Hold L + R + X + Y to unlock Advanced Tools.");
 
-                selected = page == SETTINGS || page == THEMES ? selected : 0;
+                if (page == THEMES) selected = themeIndex;
+                else if (page != SETTINGS) selected = 0;
                 dirty = 1;
             }
         }
