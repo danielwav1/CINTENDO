@@ -1574,11 +1574,6 @@ int main(void)
             draw();
             dirty = 0;
         }
-        if (page == HOME)
-        {
-            uiFrameCounter++;
-            dirty = 1;
-        }
         gspWaitForVBlank();
     }
 
