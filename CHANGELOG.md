@@ -31,9 +31,11 @@
 - The exact cause of the previously reported black lines has not been isolated from source inspection alone. A physical Old 2DS test is still required.
 
 ### BUG-002 — .3dsx launching
-- Direct .3dsx chain-loading is not implemented.
-- `envSetNextLoad()` is a Nintendo Switch/libnx API, not a Nintendo 3DS/libctru API. The 3DS APT interface exposes title-ID chainloader functions, not a path-based `.3dsx` loader.
-- The Homebrew Library remains a scanner/details view. It must not claim to launch apps until a real 3DSX loader integration is available and tested.
+- The Homebrew Library now requests a launch through the Rosalina `hb:ldr` service, using the same target-path and argv IPC commands as the Homebrew Launcher.
+- The Nintendo Switch `envSetNextLoad()` API is not available on Nintendo 3DS/libctru; using it here would be incorrect.
+- Direct launch is available only when the running environment exposes `hb:ldr`. Other loader environments show an explicit unsupported-service message.
+- The request is staged before graphics/audio cleanup; the process exits through `svcExitProcess()` so the loader can take over.
+- SMDH sidecar metadata and icon rendering are not yet implemented.
 
 ### BUG-003 — Old-2DS compatibility
 - The current renderer uses standard non-wide 400×240 top and 320×240 bottom targets and does not request New-3DS clock or L2-cache features.
