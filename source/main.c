@@ -74,6 +74,7 @@ static int darkMode = 1;
 static int musicCount;
 static int musicPlaying;
 static int musicPaused;
+static int ndspReady;
 static char musicFiles[128][256];
 static void *musicData;
 static ndspWaveBuf musicWave;
@@ -204,7 +205,8 @@ static u32 musicRead32(const unsigned char *p)
 
 static void stopMusic(void)
 {
-    ndspChnReset(0);
+    if (ndspReady)
+        ndspChnReset(0);
     if (musicData) { linearFree(musicData); musicData = NULL; }
     musicPlaying = 0;
     musicPaused = 0;
@@ -212,6 +214,8 @@ static void stopMusic(void)
 
 static int playMusicFile(const char *name)
 {
+    if (!ndspReady || !name)
+        return 0;
     char full[PATH_SIZE];
     if (snprintf(full, sizeof(full), "sdmc:/3ds/CINTENDO/Music/%s", name) >= (int)sizeof(full)) return 0;
     FILE *file = fopen(full, "rb");
@@ -525,7 +529,10 @@ static void footer(void)
 
 static void launcherTextDraw(const char *value, float x, float y, float scale)
 {
+    if (!launcherText || !value || !value[0])
+        return;
     C2D_Text text;
+    memset(&text, 0, sizeof(text));
     C2D_TextParse(&text, launcherText, value);
     C2D_DrawText(&text, C2D_AlignCenter, x, y, 0.5f, scale, scale);
 }
@@ -1177,15 +1184,36 @@ static int copyToVault(const char *source)
 int main(void)
 {
     gfxInitDefault();
-    C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
-    C2D_Init(C2D_DEFAULT_MAX_OBJECTS);
+    gfxSet3D(false);
+    if (!C3D_Init(C3D_DEFAULT_CMDBUF_SIZE))
+    {
+        gfxExit();
+        return 1;
+    }
+    if (!C2D_Init(C2D_DEFAULT_MAX_OBJECTS))
+    {
+        C3D_Fini();
+        gfxExit();
+        return 1;
+    }
     topTarget = C2D_CreateScreenTarget(GFX_TOP, GFX_LEFT);
     bottomTarget = C2D_CreateScreenTarget(GFX_BOTTOM, GFX_LEFT);
     launcherText = C2D_TextBufNew(16384);
-    ndspInit();
+    if (!topTarget || !bottomTarget || !launcherText)
+    {
+        if (launcherText)
+            C2D_TextBufDelete(launcherText);
+        C2D_Fini();
+        C3D_Fini();
+        gfxExit();
+        return 1;
+    }
+    ndspReady = R_SUCCEEDED(ndspInit());
     ensureFolders();
     settingsLoad();
     scanPlugins();
+    if (!ndspReady)
+        statusSet("Audio service unavailable. Music playback is disabled.");
 
     while (aptMainLoop() && running)
     {
@@ -1475,8 +1503,10 @@ int main(void)
     }
 
     stopMusic();
-    ndspExit();
-    C2D_TextBufDelete(launcherText);
+    if (ndspReady)
+        ndspExit();
+    if (launcherText)
+        C2D_TextBufDelete(launcherText);
     C2D_Fini();
     C3D_Fini();
     gfxExit();
