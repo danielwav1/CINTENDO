@@ -239,7 +239,7 @@ static int playMusicFile(const char *name)
     {
         u32 chunkSize = musicRead32(bytes + offset + 4);
         u32 chunkData = offset + 8;
-        if (chunkData + chunkSize > (u32)length) break;
+        if (chunkSize > (u32)length - chunkData) break;
         if (!memcmp(bytes + offset, "fmt ", 4) && chunkSize >= 16)
         {
             format = musicRead16(bytes + chunkData);
