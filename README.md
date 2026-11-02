@@ -24,7 +24,7 @@ CINTENDO is a two-screen graphical homebrew utility for the Nintendo 3DS family,
 
 ## Important limitations
 
-- The Homebrew Library currently scans and displays .3dsx files; it does not chain-load them. Start homebrew applications through the Homebrew Launcher.
+- The Homebrew Library recursively scans and displays .3dsx files and can request chain-loading through the Rosalina hb:ldr service. This requires launching CINTENDO from a compatible Rosalina Homebrew Launcher environment; other loader environments report that direct launch is unavailable.
 - The Save Vault stores ordinary file copies. It does not restore game saves. Use an appropriate save manager for game-specific restore operations.
 - Plugins are declarative metadata files, not arbitrary executable code. Only actions compiled into CINTENDO can run.
 - The plugin scanner currently ignores malformed or mismatched plugin pairs; it does not yet show a detailed rejection reason for each invalid file.
@@ -40,8 +40,10 @@ CINTENDO is a two-screen graphical homebrew utility for the Nintendo 3DS family,
 
 ### File browser and Homebrew Library
 - Up / Down: select an entry.
-- A: open a folder or show file details.
+- A: open a folder, show file details, or launch a selected .3dsx.
 - B: go back.
+
+Direct .3dsx launch uses the hb:ldr IPC service provided by the Rosalina Homebrew Launcher. It is not the Nintendo Switch envSetNextLoad API. If hb:ldr is unavailable, CINTENDO displays an error and remains open.
 
 ### Themes and settings
 - Up / Down: select.
