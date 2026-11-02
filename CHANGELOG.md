@@ -38,7 +38,8 @@
 ### BUG-003 — Old-2DS compatibility
 - The current renderer uses standard non-wide 400×240 top and 320×240 bottom targets and does not request New-3DS clock or L2-cache features.
 - Audio and renderer allocations now have initialization/allocation checks where used.
-- Explicit APT hardware reporting and a heap/linear-memory debug overlay remain outstanding.
+- APT hardware detection now reports Old 3DS / 2DS versus New 3DS in the System Dashboard. No New-3DS-only performance features are enabled.
+- A heap/linear-memory debug overlay remains outstanding.
 
 ## Verification status
 
