@@ -13,6 +13,7 @@
 #define MAX_ENTRIES 220
 #define PATH_SIZE 512
 #define VISIBLE_ROWS 6
+#define HBLDR_ARGV_SIZE 0x400
 
 typedef struct
 {
@@ -77,6 +78,7 @@ static int musicPaused;
 static int ndspReady;
 static bool isNew3DS;
 static int hardwareDetected;
+static int launchRequested;
 static char musicFiles[128][256];
 static void *musicData;
 static ndspWaveBuf musicWave;
@@ -1092,6 +1094,74 @@ static void parentFolder(void)
         snprintf(path, sizeof(path), "sdmc:/");
 }
 
+static Result hbldrSetTarget(Handle loader, const char *path)
+{
+    u32 pathLength = (u32)strlen(path) + 1;
+    u32 *command = getThreadCommandBuffer();
+    command[0] = IPC_MakeHeader(2, 0, 2);
+    command[1] = IPC_Desc_StaticBuffer(pathLength, 0);
+    command[2] = (u32)path;
+    Result result = svcSendSyncRequest(loader);
+    if (R_SUCCEEDED(result))
+        result = command[1];
+    return result;
+}
+
+static Result hbldrSetArgv(Handle loader)
+{
+    u32 arguments[HBLDR_ARGV_SIZE / sizeof(u32)] = {0};
+    u32 *command = getThreadCommandBuffer();
+    command[0] = IPC_MakeHeader(3, 0, 2);
+    command[1] = IPC_Desc_StaticBuffer(sizeof(arguments), 1);
+    command[2] = (u32)arguments;
+    Result result = svcSendSyncRequest(loader);
+    if (R_SUCCEEDED(result))
+        result = command[1];
+    return result;
+}
+
+static int prepareHomebrewLaunch(const char *path)
+{
+    struct stat info;
+    if (!path || !hasExtension(path, ".3dsx") ||
+        stat(path, &info) != 0 || !S_ISREG(info.st_mode))
+    {
+        statusSet("The selected 3DSX file is missing or invalid.");
+        return 0;
+    }
+
+    const char *loaderPath = path;
+    if (!strncmp(loaderPath, "sdmc:/", 6))
+        loaderPath += 5;
+    if (loaderPath[0] != '/')
+    {
+        statusSet("The 3DSX path is not an SD-card path.");
+        return 0;
+    }
+
+    Handle loader = 0;
+    Result result = svcConnectToPort(&loader, "hb:ldr");
+    if (R_FAILED(result))
+    {
+        statusSet("3DSX launch requires the Rosalina hb:ldr service.");
+        return 0;
+    }
+
+    result = hbldrSetTarget(loader, loaderPath);
+    if (R_SUCCEEDED(result))
+        result = hbldrSetArgv(loader);
+    svcCloseHandle(loader);
+
+    if (R_FAILED(result))
+    {
+        statusSet("The Homebrew Launcher rejected this 3DSX request.");
+        return 0;
+    }
+
+    launchRequested = 1;
+    return 1;
+}
+
 static void openEntry(int appMode)
 {
     int parent = !appMode && page == FILES && strcmp(path, "sdmc:/") != 0;
@@ -1114,6 +1184,14 @@ static void openEntry(int appMode)
     if (length < 0 || length >= (int)sizeof(full))
     {
         statusSet("Path is too long.");
+        dirty = 1;
+        return;
+    }
+
+    if (appMode)
+    {
+        if (prepareHomebrewLaunch(full))
+            running = 0;
         dirty = 1;
         return;
     }
@@ -1513,5 +1591,7 @@ int main(void)
     C2D_Fini();
     C3D_Fini();
     gfxExit();
+    if (launchRequested)
+        svcExitProcess();
     return 0;
 }
