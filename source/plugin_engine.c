@@ -47,6 +47,15 @@ static int readPluginLine(FILE *file, char *line, size_t lineSize)
     return 1;
 }
 
+static int copyPluginField(char *destination, size_t destinationSize, const char *value)
+{
+    size_t length = strlen(value);
+    if (!destination || !value || length == 0 || length >= destinationSize)
+        return 0;
+    memcpy(destination, value, length + 1);
+    return 1;
+}
+
 static int parseKey(const char *path, char *id, size_t idSize)
 {
     if (!id || idSize < 2 || !pluginFileAllowed(path))
@@ -63,7 +72,13 @@ static int parseKey(const char *path, char *id, size_t idSize)
         if (!strcmp(line, "CINTENDO_KEY_V1"))
             header = 1;
         else if (!strncmp(line, "id=", 3))
-            snprintf(id, idSize, "%s", line + 3);
+        {
+            if (!copyPluginField(id, idSize, line + 3))
+            {
+                fclose(file);
+                return 0;
+            }
+        }
     }
     fclose(file);
     return readResult == 0 && header && safeId(id);
@@ -86,13 +101,37 @@ static int parseScript(const char *path, CintendoPlugin *plugin)
         if (!strcmp(line, "CINTENDO_SCRIPT_V1"))
             header = 1;
         else if (!strncmp(line, "id=", 3))
-            snprintf(scriptId, sizeof(scriptId), "%s", line + 3);
+        {
+            if (!copyPluginField(scriptId, sizeof(scriptId), line + 3))
+            {
+                fclose(file);
+                return 0;
+            }
+        }
         else if (!strncmp(line, "name=", 5))
-            snprintf(plugin->name, sizeof(plugin->name), "%s", line + 5);
+        {
+            if (!copyPluginField(plugin->name, sizeof(plugin->name), line + 5))
+            {
+                fclose(file);
+                return 0;
+            }
+        }
         else if (!strncmp(line, "description=", 12))
-            snprintf(plugin->description, sizeof(plugin->description), "%s", line + 12);
+        {
+            if (!copyPluginField(plugin->description, sizeof(plugin->description), line + 12))
+            {
+                fclose(file);
+                return 0;
+            }
+        }
         else if (!strncmp(line, "action=", 7))
-            snprintf(plugin->action, sizeof(plugin->action), "%s", line + 7);
+        {
+            if (!copyPluginField(plugin->action, sizeof(plugin->action), line + 7))
+            {
+                fclose(file);
+                return 0;
+            }
+        }
     }
     fclose(file);
     if (readResult != 0 || !header || !safeId(scriptId) ||
