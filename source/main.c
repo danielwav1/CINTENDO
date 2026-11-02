@@ -81,6 +81,7 @@ static int advancedUnlocked;
 static int running = 1;
 static int dirty = 1;
 static int comboWasHeld;
+static int resetConfirmStep;
 static unsigned int uiFrameCounter;
 static Page page = HOME;
 static Page previousPage = FILES;
@@ -504,7 +505,7 @@ static void drawHome(void)
     static const char *labels[] = {
         "Files", "Homebrew", "Save Vault",
         "Themes", "System", "Settings",
-        "Plugins", "About", "Music"
+        "Advanced", "About", "Music"
     };
     static const char *symbols[] = {"F", "H", "S", "T", "D", "!", "P", "i", "M"};
     static const u32 colors[] = {
@@ -993,8 +994,8 @@ static void drawGraphicalPage(void)
         section = "RESET CONFIRMATION";
         uiCard(25, 72, 350, 58, "!", "Reset CINTENDO?", "Save Vault backups will be kept", 1, 0xFFB84D4D);
         bottomTitle = "CONFIRM";
-        line1 = "Y  Confirm reset";
-        line2 = "B  Cancel";
+        line1 = resetConfirmStep ? "Y  Confirm reset now" : "Y  Start confirmation";
+        line2 = resetConfirmStep ? "B  Cancel reset" : "B  Back";
         line3 = "Your backup archive is preserved";
     }
     else if (page == MUSIC)
@@ -1209,8 +1210,13 @@ int main(void)
                 }
                 else if (selected == 6)
                 {
-                    scanPlugins();
-                    page = PLUGINS;
+                    if (advancedUnlocked)
+                    {
+                        page = ADVANCED;
+                        selected = 0;
+                    }
+                    else
+                        statusSet("Hold L + R + X + Y to unlock Advanced Tools.");
                 }
                 else if (selected == 7)
                     page = ABOUT;
@@ -1327,18 +1333,27 @@ int main(void)
         }
         else if (page == ADVANCED || page == SYSTEM || page == ABOUT)
         {
+            if (page == ADVANCED)
+            {
+                if (keys & KEY_UP) { selected = (selected + 1) % 2; dirty = 1; }
+                if (keys & KEY_DOWN) { selected = (selected + 1) % 2; dirty = 1; }
+                if (keys & KEY_A)
+                {
+                    if (selected == 0)
+                    {
+                        scanPlugins();
+                        page = PLUGINS;
+                        selected = 0;
+                    }
+                    else
+                    {
+                        resetConfirmStep = 0;
+                        page = RESET_CONFIRM;
+                    }
+                    dirty = 1;
+                }
+            }
             if (keys & KEY_B) { page = HOME; selected = 0; dirty = 1; }
-            if (page == ADVANCED && (keys & KEY_A))
-            {
-                page = PLUGINS;
-                selected = 0;
-                dirty = 1;
-            }
-            if (page == ADVANCED && (keys & KEY_Y))
-            {
-                page = RESET_CONFIRM;
-                dirty = 1;
-            }
         }
         else if (page == PLUGINS)
         {
@@ -1348,8 +1363,12 @@ int main(void)
             if ((keys & KEY_A) && pluginCount > 0 && selected < pluginCount)
             {
                 if (pluginEngineToggle(&plugins[selected]))
-                    statusSet(plugins[selected].enabled ? "Plugin key disabled." : "Plugin key enabled.");
-                scanPlugins();
+                {
+                    scanPlugins();
+                    statusSet(plugins[selected].enabled ? "Plugin enabled." : "Plugin disabled.");
+                }
+                else
+                    statusSet("Could not change plugin state.");
                 dirty = 1;
             }
             if ((keys & KEY_X) && pluginCount > 0 && selected < pluginCount)
@@ -1391,11 +1410,25 @@ int main(void)
         {
             if (keys & KEY_Y)
             {
-                resetCintendo();
+                if (!resetConfirmStep)
+                {
+                    resetConfirmStep = 1;
+                    statusSet("Press Y again to confirm the CINTENDO reset.");
+                }
+                else
+                {
+                    resetConfirmStep = 0;
+                    resetCintendo();
+                    page = ADVANCED;
+                }
+                dirty = 1;
+            }
+            if (keys & KEY_B)
+            {
+                resetConfirmStep = 0;
                 page = ADVANCED;
                 dirty = 1;
             }
-            if (keys & KEY_B) { page = ADVANCED; dirty = 1; }
         }
 
         if (dirty)
