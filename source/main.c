@@ -12,7 +12,7 @@
 
 #define MAX_ENTRIES 220
 #define PATH_SIZE 512
-#define VISIBLE_ROWS 16
+#define VISIBLE_ROWS 6
 
 typedef struct
 {
