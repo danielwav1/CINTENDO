@@ -75,6 +75,8 @@ static int musicCount;
 static int musicPlaying;
 static int musicPaused;
 static int ndspReady;
+static bool isNew3DS;
+static int hardwareDetected;
 static char musicFiles[128][256];
 static void *musicData;
 static ndspWaveBuf musicWave;
@@ -701,7 +703,7 @@ static void drawSystem(void)
     consoleSelect(&top);
     consoleClear();
     header("SYSTEM DASHBOARD");
-    printf("\n  DEVICE\n  Nintendo 3DS family\n  CINTENDO 1.3\n");
+    printf("\n  DEVICE\n  Nintendo 3DS family\n  CINTENDO 1.5\n");
     printf("\n  STORAGE\n  Total: %s\n  Used:  %s\n  Free:  %s\n",
            totalText, usedText, freeText);
     printf("\n  SD mount: sdmc:/\n");
@@ -954,7 +956,7 @@ static void drawGraphicalPage(void)
         char a[40], b[40], c[40];
         formatSize(total, a, sizeof(a)); formatSize(freeBytes, b, sizeof(b)); formatSize(total >= freeBytes ? total - freeBytes : 0, c, sizeof(c));
         section = "SYSTEM DASHBOARD";
-        uiCard(25, 59, 350, 45, "3DS", "Nintendo 3DS family", "CINTENDO homebrew environment", 1, uiAccent());
+        uiCard(25, 59, 350, 45, "HW", "Detected hardware", hardwareDetected ? (isNew3DS ? "New 3DS family" : "Old 3DS / 2DS family") : "Detection unavailable", 1, uiAccent());
         uiCard(25, 111, 350, 45, "SD", "SD card storage", a, 0, 0xFF36A5D9);
         uiCard(25, 163, 350, 45, "FREE", "Available space", b, 0, 0xFF36B58B);
         bottomTitle = "STORAGE DIAGNOSTICS";
@@ -1184,6 +1186,7 @@ static int copyToVault(const char *source)
 int main(void)
 {
     gfxInitDefault();
+    hardwareDetected = R_SUCCEEDED(APT_CheckNew3DS(&isNew3DS));
     gfxSet3D(false);
     if (!C3D_Init(C3D_DEFAULT_CMDBUF_SIZE))
     {
