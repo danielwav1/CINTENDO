@@ -87,7 +87,6 @@ static int running = 1;
 static int dirty = 1;
 static int comboWasHeld;
 static int resetConfirmStep;
-static unsigned int uiFrameCounter;
 static Page page = HOME;
 static Page previousPage = FILES;
 static char path[PATH_SIZE] = "sdmc:/";
@@ -826,7 +825,7 @@ static void uiCard(float x, float y, float w, float h, const char *icon, const c
 {
     if (active)
     {
-        float border = (uiFrameCounter % 24U) < 12U ? 2.0f : 3.0f;
+        float border = 2.0f;
         uiRect(x - border, y - border, w + border * 2.0f, h + border * 2.0f, uiAccent());
     }
     uiRect(x, y, w, h, active ? 0xFF39445B : 0xFF202838);
@@ -1271,7 +1270,7 @@ int main(void)
         gfxExit();
         return 1;
     }
-    if (!C2D_Init(C2D_DEFAULT_MAX_OBJECTS))
+    if (!C2D_Init(1024))
     {
         C3D_Fini();
         gfxExit();
@@ -1279,7 +1278,7 @@ int main(void)
     }
     topTarget = C2D_CreateScreenTarget(GFX_TOP, GFX_LEFT);
     bottomTarget = C2D_CreateScreenTarget(GFX_BOTTOM, GFX_LEFT);
-    launcherText = C2D_TextBufNew(16384);
+    launcherText = C2D_TextBufNew(2048);
     if (!topTarget || !bottomTarget || !launcherText)
     {
         if (launcherText)
