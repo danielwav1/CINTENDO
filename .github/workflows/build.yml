@@ -2,7 +2,7 @@ name: CINTENDO Build
 
 on:
   push:
-    branches: [main]
+    branches: [main, fix/old2ds-stability]
   workflow_dispatch:
 
 jobs:
