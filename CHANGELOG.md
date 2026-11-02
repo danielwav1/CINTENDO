@@ -1,0 +1,48 @@
+# Changelog
+
+## Old-2DS stability branch
+
+### BUG-006 — navigation and module integration
+- The Home launcher now labels the Advanced Tools tile accurately.
+- Advanced Tools is gated by the existing L + R + X + Y unlock sequence.
+- The Advanced Tools menu now distinguishes Plugin Center from Reset.
+- Reset requires two Y confirmations and can be cancelled with B.
+- Plugin enable/disable feedback now reports the resulting state correctly.
+- The broader module split into independent init/update/draw/exit modules remains outstanding; the current application is still centered in `source/main.c`.
+
+### BUG-005 — settings persistence
+- Settings loading now validates all three stored values and rejects trailing non-whitespace data.
+- Invalid configuration is moved to `config.ini.corrupt` and defaults are loaded.
+- Settings are written to a temporary file and renamed into place only after a successful write and close.
+
+### BUG-004 — plugin input validation
+- Plugin metadata files must be regular files with a size from 1 to 2048 bytes.
+- Overlong lines are rejected rather than silently parsed in fragments.
+- Null plugin arrays and non-positive scan capacities are rejected.
+- The existing key-plus-script format and built-in action allowlist are retained.
+- The UI still omits invalid plugin pairs rather than showing a per-file rejection reason.
+
+### BUG-001 / BUG-001b — renderer and text safety
+- 3D output is explicitly disabled for the 2DS-oriented renderer.
+- Citro3D, Citro2D, render-target, and text-buffer initialization failures are checked.
+- The text drawing helper now safely ignores null buffers and null/empty strings.
+- The existing text buffer is cleared once before each graphical page render.
+- No raw framebuffer, pitch, pixel-format, or rotation code exists in this project; rendering is performed through Citro2D screen targets at the standard 400×240 top-screen and 320×240 bottom-screen logical resolutions.
+- The exact cause of the previously reported black lines has not been isolated from source inspection alone. A physical Old 2DS test is still required.
+
+### BUG-002 — .3dsx launching
+- The Homebrew Library now requests a launch through the Rosalina `hb:ldr` service, using the same target-path and argv IPC commands as the Homebrew Launcher.
+- The Nintendo Switch `envSetNextLoad()` API is not available on Nintendo 3DS/libctru; using it here would be incorrect.
+- Direct launch is available only when the running environment exposes `hb:ldr`. Other loader environments show an explicit unsupported-service message.
+- The request is staged before graphics/audio cleanup; the process exits through `svcExitProcess()` so the loader can take over.
+- SMDH sidecar metadata and icon rendering are not yet implemented.
+
+### BUG-003 — Old-2DS compatibility
+- The current renderer uses standard non-wide 400×240 top and 320×240 bottom targets and does not request New-3DS clock or L2-cache features.
+- Audio and renderer allocations now have initialization/allocation checks where used.
+- APT hardware detection now reports Old 3DS / 2DS versus New 3DS in the System Dashboard. No New-3DS-only performance features are enabled.
+- A heap/linear-memory debug overlay remains outstanding.
+
+## Verification status
+
+A successful GitHub Actions build and a real Old 2DS hardware test are required before considering this branch stable. A successful compile does not prove that the black-line rendering issue is fixed.

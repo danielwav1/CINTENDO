@@ -2,107 +2,125 @@
 
 **Your 3DS. Your way.**
 
-CINTENDO is an independent Nintendo 3DS homebrew utility built with devkitPro and libctru.
+CINTENDO is a two-screen graphical homebrew utility for the Nintendo 3DS family, built with devkitPro, devkitARM, libctru, Citro3D, and Citro2D. The project is designed to remain usable on original 2DS / Old 3DS hardware.
 
-## Features
+**Developer:** danielwav1
+**Repository:** https://github.com/danielwav1/CINTENDO
 
-- Unified two-screen graphical launcher UI with selectable app tiles, icon badges, cards, animated selection highlight and matching control panels
-- Graphical file manager, homebrew library, Save Vault, themes, settings, diagnostics, plugin center and music player
-- Two-screen SD file browser
-- CINTENDO Music: local PCM WAV player with play, pause, resume and stop controls
-- Persistent Dark Mode enabled by default, with a Light Mode option
-- Homebrew library, Save Vault, storage dashboard and six themes
-- Advanced Tools protected by the L+R+X+Y interface toggle
-- Modular SD-card plugin key and script system
-- Made by danielwav1
+## Current features
 
-## Launcher interface
+- Two-screen graphical launcher with nine application tiles.
+- SD-card file browser.
+- Recursive .3dsx discovery below sdmc:/3ds/.
+- File details and copy-to-Save-Vault function.
+- Save Vault as an ordinary SD-card backup archive.
+- Six built-in theme presets.
+- Persistent control-hint, dark-mode, and theme settings.
+- SD storage dashboard.
+- PCM WAV music playback (8-bit or 16-bit, mono or stereo; maximum 8 MB per file).
+- Advanced Tools protected by the L + R + X + Y unlock sequence.
+- Local plugin key center with a compiled-in action allowlist.
+- Safe fallback behavior for missing or invalid configuration files.
 
-All launcher pages now use the same Citro2D graphical layout rather than switching between the graphical home screen and terminal-style console pages. The home dashboard contains nine selectable cards for Files, Homebrew, Save Vault, Themes, System, Settings, Plugins, About and Music. Other pages use matching cards, status panels and on-screen control hints.
+## Important limitations
 
-The current tile icons are drawn from built-in vector-style shapes and short labels, so the app does not depend on external icon packs or downloaded artwork.
+- The Homebrew Library recursively scans and displays .3dsx files and can request chain-loading through the Rosalina hb:ldr service. This requires launching CINTENDO from a compatible Rosalina Homebrew Launcher environment; other loader environments report that direct launch is unavailable.
+- The Save Vault stores ordinary file copies. It does not restore game saves. Use an appropriate save manager for game-specific restore operations.
+- Plugins are declarative metadata files, not arbitrary executable code. Only actions compiled into CINTENDO can run.
+- The plugin scanner currently ignores malformed or mismatched plugin pairs; it does not yet show a detailed rejection reason for each invalid file.
+- The project is not yet split into independent module source files. Most UI and application logic remains in source/main.c.
+- The reported black-line issue has not been confirmed fixed on physical Old 2DS hardware.
 
+## Controls
 
+### Home launcher
+- D-pad: move between tiles.
+- A: open the selected page.
+- START: exit CINTENDO.
 
-The Homebrew Library recursively scans folders below `sd:/3ds/` and displays discovered `.3dsx` files. Selecting an entry opens its details. Directly chain-loading another `.3dsx` from CINTENDO is not implemented; use the Homebrew Launcher to start a selected homebrew app.
+### File browser and Homebrew Library
+- Up / Down: select an entry.
+- A: open a folder, show file details, or launch a selected .3dsx.
+- B: go back.
+
+Direct .3dsx launch uses the hb:ldr IPC service provided by the Rosalina Homebrew Launcher. It is not the Nintendo Switch envSetNextLoad API. If hb:ldr is unavailable, CINTENDO displays an error and remains open.
+
+### Themes and settings
+- Up / Down: select.
+- A: apply or toggle.
+- B: return.
+
+### Advanced Tools
+Hold L + R + X + Y to unlock Advanced Tools. This is an interface lock only; it does not grant elevated privileges.
+- Open the Advanced tile.
+- Select Plugin Center or Reset.
+- Reset requires two Y confirmations and can be cancelled with B.
+
+### Music
+- A: play selected WAV.
+- X: pause / resume.
+- Y: stop.
+- B: return home.
+
+## SD-card layout
+
+CINTENDO creates and uses these directories:
+
+    sdmc:/
+    └── 3ds/
+        └── CINTENDO/
+            ├── CINTENDO.3dsx
+            ├── CINTENDO.smdh
+            ├── config.ini
+            ├── Music/
+            ├── Plugins/
+            ├── PluginKeys/
+            └── SaveVault/
+
+The plugin source files in this repository are copied into Plugins/ and PluginKeys/ by the install-package workflow.
 
 ## Plugin system
 
-CINTENDO uses two separate files for each plugin:
+The current plugin system uses two matching files:
+- Key: PluginKeys/<name>.cplug
+- Script metadata: Plugins/<id>.cscript
 
-- **Key**: a `.cplug` file in `sd:/3ds/CINTENDO/PluginKeys/`. It unlocks a feature.
-- **Plugin code**: a matching `.cscript` file in `sd:/3ds/CINTENDO/Plugins/`. It contains the script metadata and an action for CINTENDO's built-in interpreter.
+The key and script IDs must match. Scripts contain an action identifier checked against a fixed allowlist compiled into CINTENDO. Arbitrary native code, shell commands, or scripts from the SD card are never executed.
 
-The key ID and script ID must match. CINTENDO scans both folders at startup and whenever the Plugin Key Center is opened. A key without a matching valid script is ignored. Removing the key removes the plugin from the list. Removing the script makes the key unusable.
+See docs/PLUGIN_SPEC.md for the exact v1 format and limits.
 
-### Included starter plugins
+## Installation
 
-| Plugin | Action |
-|---|---|
-| Theme Next | Switch to the next CINTENDO theme |
-| Random Theme | Select a random CINTENDO theme |
-| Theme Previous | Switch to the previous CINTENDO theme |
-| Plugin Engine Info | Display script engine information |
+1. Download the CINTENDO-Install artifact from a successful GitHub Actions build.
+2. Extract the package.
+3. Copy the included 3ds folder to the root of the SD card and merge folders if prompted.
+4. Open the Homebrew Launcher and start CINTENDO.3dsx.
 
-The source files are in `plugins/keys/` and `plugins/scripts/`. Copy the chosen key and its matching script to the corresponding SD folders. Open **Advanced Tools → Plugin Key Center**. Select a plugin and press **A** to enable or disable it; press **X** to open its details, then **X** to execute it.
+Installed application path: sdmc:/3ds/CINTENDO/CINTENDO.3dsx
 
-### Script format
+## Build from source
 
-Keys use this format:
+Use a devkitPro environment with devkitARM, libctru, Citro3D, and Citro2D installed.
 
-```ini
-CINTENDO_KEY_V1
-id=theme-next
-name=Theme Next
-```
+    make clean
+    make
 
-Scripts use this format:
+The build produces CINTENDO.3dsx and CINTENDO.smdh.
 
-```ini
-CINTENDO_SCRIPT_V1
-id=theme-next
-name=Theme Next
-description=Switch to the next CINTENDO theme preset.
-action=THEME_NEXT
-```
+GitHub Actions uses the devkitpro/devkitarm container and uploads an installable SD-card package as the CINTENDO-Install artifact.
 
-The script interpreter intentionally supports a fixed allowlist of actions. It does not execute arbitrary C, native binaries, shell commands, or code from the SD card. To add a new action, its handler must first be implemented in the CINTENDO source and compiled into the app. Plugin keys are local feature-unlock files, not cryptographic DRM.
+## Old 2DS compatibility
 
-### Adding a plugin
+The renderer uses standard non-wide logical screen targets:
+- Top: 400 × 240
+- Bottom: 320 × 240
 
-1. Add a unique key file under `plugins/keys/`.
-2. Add a matching script under `plugins/scripts/`.
-3. Implement and allowlist its action in `source/plugin_engine.c`.
-4. Build CINTENDO and copy both files to the matching SD folders.
+The Old 2DS does not support the New 3DS 800-pixel-wide top-screen mode. CINTENDO does not enable New-3DS-only CPU or cache features.
 
-## CINTENDO Music
-
-Copy compatible uncompressed PCM WAV files into `sd:/3ds/CINTENDO/Music/`. Supports 8-bit or 16-bit PCM, mono or stereo, up to 8 MB per file. **A** plays, **X** pauses/resumes, **Y** stops, and **B** returns home. MP3, FLAC, playlists, shuffle, repeat and background playback are not implemented.
-
-## Advanced Tools
-
-Hold **L + R + X + Y** together to unlock Advanced Tools. The interface lock does not grant root, NAND, or elevated system privileges.
-
-## Save Vault safety
-
-Save Vault stores ordinary backup-file copies. It does not overwrite game saves or NAND data. Use Checkpoint or JKSM to restore backups to the correct game.
-
-## Install
-
-Copy `CINTENDO.3dsx` to `sd:/3ds/CINTENDO/CINTENDO.3dsx` and launch it from the Homebrew Launcher.
-
-## Build
-
-Use a devkitPro devkitARM environment:
-
-```sh
-make
-```
-
-GitHub Actions builds `CINTENDO.3dsx` and `CINTENDO.smdh`, then prepares an SD-card folder package with the app and matching starter plugin files. Download the `CINTENDO-Install` artifact from the latest successful workflow run. Copy the included `3ds` folder to the root of the SD card and merge folders if prompted.
+A successful CI build does not replace testing on a real Old 2DS. See CHANGELOG.md for the current known limitations and fixes.
 
 ## Credits
 
 Made by **danielwav1**.
 
-https://github.com/danielwav1/CINTENDO
+CINTENDO is an independent community homebrew project and is not affiliated with Nintendo.

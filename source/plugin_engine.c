@@ -27,51 +27,117 @@ static int safeId(const char *id)
     return 1;
 }
 
+#define MAX_PLUGIN_FILE_SIZE 2048
+
+static int pluginFileAllowed(const char *path)
+{
+    struct stat info;
+    return stat(path, &info) == 0 && S_ISREG(info.st_mode) &&
+        info.st_size > 0 && info.st_size <= MAX_PLUGIN_FILE_SIZE;
+}
+
+static int readPluginLine(FILE *file, char *line, size_t lineSize)
+{
+    if (!fgets(line, (int)lineSize, file))
+        return 0;
+    size_t length = strlen(line);
+    if (length == lineSize - 1 && line[length - 1] != '\n' && !feof(file))
+        return -1;
+    line[strcspn(line, "\r\n")] = 0;
+    return 1;
+}
+
+static int copyPluginField(char *destination, size_t destinationSize, const char *value)
+{
+    if (!destination || !value || destinationSize == 0)
+        return 0;
+    size_t length = strlen(value);
+    if (length == 0 || length >= destinationSize)
+        return 0;
+    memcpy(destination, value, length + 1);
+    return 1;
+}
+
 static int parseKey(const char *path, char *id, size_t idSize)
 {
+    if (!id || idSize < 2 || !pluginFileAllowed(path))
+        return 0;
     FILE *file = fopen(path, "r");
     if (!file)
         return 0;
     char line[192];
     int header = 0;
+    int readResult;
     id[0] = 0;
-    while (fgets(line, sizeof(line), file))
+    while ((readResult = readPluginLine(file, line, sizeof(line))) > 0)
     {
-        line[strcspn(line, "\r\n")] = 0;
         if (!strcmp(line, "CINTENDO_KEY_V1"))
             header = 1;
         else if (!strncmp(line, "id=", 3))
-            snprintf(id, idSize, "%s", line + 3);
+        {
+            if (!copyPluginField(id, idSize, line + 3))
+            {
+                fclose(file);
+                return 0;
+            }
+        }
     }
     fclose(file);
-    return header && safeId(id);
+    return readResult == 0 && header && safeId(id);
 }
 
 static int parseScript(const char *path, CintendoPlugin *plugin)
 {
+    if (!plugin || !pluginFileAllowed(path))
+        return 0;
     FILE *file = fopen(path, "r");
     if (!file)
         return 0;
     char line[256];
     int header = 0;
+    int readResult;
     char scriptId[48] = "";
     memset(plugin, 0, sizeof(*plugin));
-    while (fgets(line, sizeof(line), file))
+    while ((readResult = readPluginLine(file, line, sizeof(line))) > 0)
     {
-        line[strcspn(line, "\r\n")] = 0;
         if (!strcmp(line, "CINTENDO_SCRIPT_V1"))
             header = 1;
         else if (!strncmp(line, "id=", 3))
-            snprintf(scriptId, sizeof(scriptId), "%s", line + 3);
+        {
+            if (!copyPluginField(scriptId, sizeof(scriptId), line + 3))
+            {
+                fclose(file);
+                return 0;
+            }
+        }
         else if (!strncmp(line, "name=", 5))
-            snprintf(plugin->name, sizeof(plugin->name), "%s", line + 5);
+        {
+            if (!copyPluginField(plugin->name, sizeof(plugin->name), line + 5))
+            {
+                fclose(file);
+                return 0;
+            }
+        }
         else if (!strncmp(line, "description=", 12))
-            snprintf(plugin->description, sizeof(plugin->description), "%s", line + 12);
+        {
+            if (!copyPluginField(plugin->description, sizeof(plugin->description), line + 12))
+            {
+                fclose(file);
+                return 0;
+            }
+        }
         else if (!strncmp(line, "action=", 7))
-            snprintf(plugin->action, sizeof(plugin->action), "%s", line + 7);
+        {
+            if (!copyPluginField(plugin->action, sizeof(plugin->action), line + 7))
+            {
+                fclose(file);
+                return 0;
+            }
+        }
     }
     fclose(file);
-    if (!header || !safeId(scriptId) || !plugin->name[0] || !plugin->description[0] || !plugin->action[0])
+    if (readResult != 0 || !header || !safeId(scriptId) ||
+        !plugin->name[0] || !plugin->description[0] || !plugin->action[0])
         return 0;
     snprintf(plugin->id, sizeof(plugin->id), "%s", scriptId);
     return 1;
@@ -87,6 +153,8 @@ static int isEnabled(const char *id)
 
 int pluginEngineScan(CintendoPlugin *plugins, int capacity)
 {
+    if (!plugins || capacity <= 0)
+        return 0;
     DIR *dir = opendir(KEY_DIR);
     int count = 0;
     if (!dir)

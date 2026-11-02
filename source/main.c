@@ -12,7 +12,8 @@
 
 #define MAX_ENTRIES 220
 #define PATH_SIZE 512
-#define VISIBLE_ROWS 16
+#define VISIBLE_ROWS 6
+#define HBLDR_ARGV_SIZE 0x400
 
 typedef struct
 {
@@ -74,6 +75,10 @@ static int darkMode = 1;
 static int musicCount;
 static int musicPlaying;
 static int musicPaused;
+static int ndspReady;
+static bool isNew3DS;
+static int hardwareDetected;
+static int launchRequested;
 static char musicFiles[128][256];
 static void *musicData;
 static ndspWaveBuf musicWave;
@@ -81,7 +86,7 @@ static int advancedUnlocked;
 static int running = 1;
 static int dirty = 1;
 static int comboWasHeld;
-static unsigned int uiFrameCounter;
+static int resetConfirmStep;
 static Page page = HOME;
 static Page previousPage = FILES;
 static char path[PATH_SIZE] = "sdmc:/";
@@ -203,7 +208,8 @@ static u32 musicRead32(const unsigned char *p)
 
 static void stopMusic(void)
 {
-    ndspChnReset(0);
+    if (ndspReady)
+        ndspChnReset(0);
     if (musicData) { linearFree(musicData); musicData = NULL; }
     musicPlaying = 0;
     musicPaused = 0;
@@ -211,6 +217,8 @@ static void stopMusic(void)
 
 static int playMusicFile(const char *name)
 {
+    if (!ndspReady || !name)
+        return 0;
     char full[PATH_SIZE];
     if (snprintf(full, sizeof(full), "sdmc:/3ds/CINTENDO/Music/%s", name) >= (int)sizeof(full)) return 0;
     FILE *file = fopen(full, "rb");
@@ -231,7 +239,7 @@ static int playMusicFile(const char *name)
     {
         u32 chunkSize = musicRead32(bytes + offset + 4);
         u32 chunkData = offset + 8;
-        if (chunkData + chunkSize > (u32)length) break;
+        if (chunkSize > (u32)length - chunkData) break;
         if (!memcmp(bytes + offset, "fmt ", 4) && chunkSize >= 16)
         {
             format = musicRead16(bytes + chunkData);
@@ -317,35 +325,65 @@ static void ensureFolders(void)
 
 static void settingsLoad(void)
 {
-    FILE *file = fopen("sdmc:/3ds/CINTENDO/config.ini", "r");
+    const char *configPath = "sdmc:/3ds/CINTENDO/config.ini";
+    const char *backupPath = "sdmc:/3ds/CINTENDO/config.ini.corrupt";
+    FILE *file = fopen(configPath, "r");
     if (!file)
         return;
 
     int savedTheme = 0;
     int savedHints = 1;
     int savedDarkMode = 1;
-    int fields = fscanf(file, "%d %d %d", &savedTheme, &savedHints, &savedDarkMode);
-    if (fields >= 2)
-    {
-        if (savedTheme >= 0 && savedTheme < (int)(sizeof(themes) / sizeof(themes[0])))
-            themeIndex = savedTheme;
-        hints = savedHints ? 1 : 0;
-        darkMode = fields >= 3 ? (savedDarkMode ? 1 : 0) : 1;
-    }
+    char extra;
+    int fields = fscanf(file, "%d %d %d %c", &savedTheme, &savedHints, &savedDarkMode, &extra);
+    int valid = fields == 3 &&
+        savedTheme >= 0 &&
+        savedTheme < (int)(sizeof(themes) / sizeof(themes[0])) &&
+        (savedHints == 0 || savedHints == 1) &&
+        (savedDarkMode == 0 || savedDarkMode == 1);
     fclose(file);
+
+    if (!valid)
+    {
+        remove(backupPath);
+        rename(configPath, backupPath);
+        themeIndex = 0;
+        hints = 1;
+        darkMode = 1;
+        statusSet("Invalid settings were backed up. Defaults loaded.");
+        return;
+    }
+
+    themeIndex = savedTheme;
+    hints = savedHints;
+    darkMode = savedDarkMode;
 }
 
 static void settingsSave(void)
 {
+    const char *configPath = "sdmc:/3ds/CINTENDO/config.ini";
+    const char *tempPath = "sdmc:/3ds/CINTENDO/config.ini.tmp";
     ensureFolders();
-    FILE *file = fopen("sdmc:/3ds/CINTENDO/config.ini", "w");
+
+    FILE *file = fopen(tempPath, "w");
     if (!file)
     {
-        statusSet("Could not save settings.");
+        statusSet("Could not create temporary settings file.");
         return;
     }
-    fprintf(file, "%d %d %d\n", themeIndex, hints, darkMode);
-    fclose(file);
+
+    int written = fprintf(file, "%d %d %d\n", themeIndex, hints, darkMode);
+    int ok = written > 0 && !ferror(file);
+    if (fclose(file) != 0)
+        ok = 0;
+
+    if (!ok || rename(tempPath, configPath) != 0)
+    {
+        remove(tempPath);
+        statusSet("Could not safely replace settings file.");
+        return;
+    }
+
     statusSet("Settings saved to SD card.");
 }
 
@@ -494,7 +532,10 @@ static void footer(void)
 
 static void launcherTextDraw(const char *value, float x, float y, float scale)
 {
+    if (!launcherText || !value || !value[0])
+        return;
     C2D_Text text;
+    memset(&text, 0, sizeof(text));
     C2D_TextParse(&text, launcherText, value);
     C2D_DrawText(&text, C2D_AlignCenter, x, y, 0.5f, scale, scale);
 }
@@ -504,7 +545,7 @@ static void drawHome(void)
     static const char *labels[] = {
         "Files", "Homebrew", "Save Vault",
         "Themes", "System", "Settings",
-        "Plugins", "About", "Music"
+        "Advanced", "About", "Music"
     };
     static const char *symbols[] = {"F", "H", "S", "T", "D", "!", "P", "i", "M"};
     static const u32 colors[] = {
@@ -663,7 +704,7 @@ static void drawSystem(void)
     consoleSelect(&top);
     consoleClear();
     header("SYSTEM DASHBOARD");
-    printf("\n  DEVICE\n  Nintendo 3DS family\n  CINTENDO 1.3\n");
+    printf("\n  DEVICE\n  Nintendo 3DS family\n  CINTENDO 1.5\n");
     printf("\n  STORAGE\n  Total: %s\n  Used:  %s\n  Free:  %s\n",
            totalText, usedText, freeText);
     printf("\n  SD mount: sdmc:/\n");
@@ -784,7 +825,7 @@ static void uiCard(float x, float y, float w, float h, const char *icon, const c
 {
     if (active)
     {
-        float border = (uiFrameCounter % 24U) < 12U ? 2.0f : 3.0f;
+        float border = 2.0f;
         uiRect(x - border, y - border, w + border * 2.0f, h + border * 2.0f, uiAccent());
     }
     uiRect(x, y, w, h, active ? 0xFF39445B : 0xFF202838);
@@ -916,7 +957,7 @@ static void drawGraphicalPage(void)
         char a[40], b[40], c[40];
         formatSize(total, a, sizeof(a)); formatSize(freeBytes, b, sizeof(b)); formatSize(total >= freeBytes ? total - freeBytes : 0, c, sizeof(c));
         section = "SYSTEM DASHBOARD";
-        uiCard(25, 59, 350, 45, "3DS", "Nintendo 3DS family", "CINTENDO homebrew environment", 1, uiAccent());
+        uiCard(25, 59, 350, 45, "HW", "Detected hardware", hardwareDetected ? (isNew3DS ? "New 3DS family" : "Old 3DS / 2DS family") : "Detection unavailable", 1, uiAccent());
         uiCard(25, 111, 350, 45, "SD", "SD card storage", a, 0, 0xFF36A5D9);
         uiCard(25, 163, 350, 45, "FREE", "Available space", b, 0, 0xFF36B58B);
         bottomTitle = "STORAGE DIAGNOSTICS";
@@ -993,8 +1034,8 @@ static void drawGraphicalPage(void)
         section = "RESET CONFIRMATION";
         uiCard(25, 72, 350, 58, "!", "Reset CINTENDO?", "Save Vault backups will be kept", 1, 0xFFB84D4D);
         bottomTitle = "CONFIRM";
-        line1 = "Y  Confirm reset";
-        line2 = "B  Cancel";
+        line1 = resetConfirmStep ? "Y  Confirm reset now" : "Y  Start confirmation";
+        line2 = resetConfirmStep ? "B  Cancel reset" : "B  Back";
         line3 = "Your backup archive is preserved";
     }
     else if (page == MUSIC)
@@ -1052,6 +1093,74 @@ static void parentFolder(void)
         snprintf(path, sizeof(path), "sdmc:/");
 }
 
+static Result hbldrSetTarget(Handle loader, const char *path)
+{
+    u32 pathLength = (u32)strlen(path) + 1;
+    u32 *command = getThreadCommandBuffer();
+    command[0] = IPC_MakeHeader(2, 0, 2);
+    command[1] = IPC_Desc_StaticBuffer(pathLength, 0);
+    command[2] = (u32)path;
+    Result result = svcSendSyncRequest(loader);
+    if (R_SUCCEEDED(result))
+        result = command[1];
+    return result;
+}
+
+static Result hbldrSetArgv(Handle loader)
+{
+    u32 arguments[HBLDR_ARGV_SIZE / sizeof(u32)] = {0};
+    u32 *command = getThreadCommandBuffer();
+    command[0] = IPC_MakeHeader(3, 0, 2);
+    command[1] = IPC_Desc_StaticBuffer(sizeof(arguments), 1);
+    command[2] = (u32)arguments;
+    Result result = svcSendSyncRequest(loader);
+    if (R_SUCCEEDED(result))
+        result = command[1];
+    return result;
+}
+
+static int prepareHomebrewLaunch(const char *path)
+{
+    struct stat info;
+    if (!path || !hasExtension(path, ".3dsx") ||
+        stat(path, &info) != 0 || !S_ISREG(info.st_mode))
+    {
+        statusSet("The selected 3DSX file is missing or invalid.");
+        return 0;
+    }
+
+    const char *loaderPath = path;
+    if (!strncmp(loaderPath, "sdmc:/", 6))
+        loaderPath += 5;
+    if (loaderPath[0] != '/')
+    {
+        statusSet("The 3DSX path is not an SD-card path.");
+        return 0;
+    }
+
+    Handle loader = 0;
+    Result result = svcConnectToPort(&loader, "hb:ldr");
+    if (R_FAILED(result))
+    {
+        statusSet("3DSX launch requires the Rosalina hb:ldr service.");
+        return 0;
+    }
+
+    result = hbldrSetTarget(loader, loaderPath);
+    if (R_SUCCEEDED(result))
+        result = hbldrSetArgv(loader);
+    svcCloseHandle(loader);
+
+    if (R_FAILED(result))
+    {
+        statusSet("The Homebrew Launcher rejected this 3DSX request.");
+        return 0;
+    }
+
+    launchRequested = 1;
+    return 1;
+}
+
 static void openEntry(int appMode)
 {
     int parent = !appMode && page == FILES && strcmp(path, "sdmc:/") != 0;
@@ -1074,6 +1183,14 @@ static void openEntry(int appMode)
     if (length < 0 || length >= (int)sizeof(full))
     {
         statusSet("Path is too long.");
+        dirty = 1;
+        return;
+    }
+
+    if (appMode)
+    {
+        if (prepareHomebrewLaunch(full))
+            running = 0;
         dirty = 1;
         return;
     }
@@ -1146,15 +1263,37 @@ static int copyToVault(const char *source)
 int main(void)
 {
     gfxInitDefault();
-    C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
-    C2D_Init(C2D_DEFAULT_MAX_OBJECTS);
+    hardwareDetected = R_SUCCEEDED(APT_CheckNew3DS(&isNew3DS));
+    gfxSet3D(false);
+    if (!C3D_Init(C3D_DEFAULT_CMDBUF_SIZE))
+    {
+        gfxExit();
+        return 1;
+    }
+    if (!C2D_Init(1024))
+    {
+        C3D_Fini();
+        gfxExit();
+        return 1;
+    }
     topTarget = C2D_CreateScreenTarget(GFX_TOP, GFX_LEFT);
     bottomTarget = C2D_CreateScreenTarget(GFX_BOTTOM, GFX_LEFT);
-    launcherText = C2D_TextBufNew(16384);
-    ndspInit();
+    launcherText = C2D_TextBufNew(2048);
+    if (!topTarget || !bottomTarget || !launcherText)
+    {
+        if (launcherText)
+            C2D_TextBufDelete(launcherText);
+        C2D_Fini();
+        C3D_Fini();
+        gfxExit();
+        return 1;
+    }
+    ndspReady = R_SUCCEEDED(ndspInit());
     ensureFolders();
     settingsLoad();
     scanPlugins();
+    if (!ndspReady)
+        statusSet("Audio service unavailable. Music playback is disabled.");
 
     while (aptMainLoop() && running)
     {
@@ -1209,8 +1348,13 @@ int main(void)
                 }
                 else if (selected == 6)
                 {
-                    scanPlugins();
-                    page = PLUGINS;
+                    if (advancedUnlocked)
+                    {
+                        page = ADVANCED;
+                        selected = 0;
+                    }
+                    else
+                        statusSet("Hold L + R + X + Y to unlock Advanced Tools.");
                 }
                 else if (selected == 7)
                     page = ABOUT;
@@ -1327,18 +1471,27 @@ int main(void)
         }
         else if (page == ADVANCED || page == SYSTEM || page == ABOUT)
         {
+            if (page == ADVANCED)
+            {
+                if (keys & KEY_UP) { selected = (selected + 1) % 2; dirty = 1; }
+                if (keys & KEY_DOWN) { selected = (selected + 1) % 2; dirty = 1; }
+                if (keys & KEY_A)
+                {
+                    if (selected == 0)
+                    {
+                        scanPlugins();
+                        page = PLUGINS;
+                        selected = 0;
+                    }
+                    else
+                    {
+                        resetConfirmStep = 0;
+                        page = RESET_CONFIRM;
+                    }
+                    dirty = 1;
+                }
+            }
             if (keys & KEY_B) { page = HOME; selected = 0; dirty = 1; }
-            if (page == ADVANCED && (keys & KEY_A))
-            {
-                page = PLUGINS;
-                selected = 0;
-                dirty = 1;
-            }
-            if (page == ADVANCED && (keys & KEY_Y))
-            {
-                page = RESET_CONFIRM;
-                dirty = 1;
-            }
         }
         else if (page == PLUGINS)
         {
@@ -1348,8 +1501,12 @@ int main(void)
             if ((keys & KEY_A) && pluginCount > 0 && selected < pluginCount)
             {
                 if (pluginEngineToggle(&plugins[selected]))
-                    statusSet(plugins[selected].enabled ? "Plugin key disabled." : "Plugin key enabled.");
-                scanPlugins();
+                {
+                    scanPlugins();
+                    statusSet(plugins[selected].enabled ? "Plugin enabled." : "Plugin disabled.");
+                }
+                else
+                    statusSet("Could not change plugin state.");
                 dirty = 1;
             }
             if ((keys & KEY_X) && pluginCount > 0 && selected < pluginCount)
@@ -1391,11 +1548,25 @@ int main(void)
         {
             if (keys & KEY_Y)
             {
-                resetCintendo();
+                if (!resetConfirmStep)
+                {
+                    resetConfirmStep = 1;
+                    statusSet("Press Y again to confirm the CINTENDO reset.");
+                }
+                else
+                {
+                    resetConfirmStep = 0;
+                    resetCintendo();
+                    page = ADVANCED;
+                }
+                dirty = 1;
+            }
+            if (keys & KEY_B)
+            {
+                resetConfirmStep = 0;
                 page = ADVANCED;
                 dirty = 1;
             }
-            if (keys & KEY_B) { page = ADVANCED; dirty = 1; }
         }
 
         if (dirty)
@@ -1403,19 +1574,18 @@ int main(void)
             draw();
             dirty = 0;
         }
-        if (page == HOME)
-        {
-            uiFrameCounter++;
-            dirty = 1;
-        }
         gspWaitForVBlank();
     }
 
     stopMusic();
-    ndspExit();
-    C2D_TextBufDelete(launcherText);
+    if (ndspReady)
+        ndspExit();
+    if (launcherText)
+        C2D_TextBufDelete(launcherText);
     C2D_Fini();
     C3D_Fini();
     gfxExit();
+    if (launchRequested)
+        svcExitProcess();
     return 0;
 }
