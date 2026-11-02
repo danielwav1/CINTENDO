@@ -318,35 +318,65 @@ static void ensureFolders(void)
 
 static void settingsLoad(void)
 {
-    FILE *file = fopen("sdmc:/3ds/CINTENDO/config.ini", "r");
+    const char *configPath = "sdmc:/3ds/CINTENDO/config.ini";
+    const char *backupPath = "sdmc:/3ds/CINTENDO/config.ini.corrupt";
+    FILE *file = fopen(configPath, "r");
     if (!file)
         return;
 
     int savedTheme = 0;
     int savedHints = 1;
     int savedDarkMode = 1;
-    int fields = fscanf(file, "%d %d %d", &savedTheme, &savedHints, &savedDarkMode);
-    if (fields >= 2)
-    {
-        if (savedTheme >= 0 && savedTheme < (int)(sizeof(themes) / sizeof(themes[0])))
-            themeIndex = savedTheme;
-        hints = savedHints ? 1 : 0;
-        darkMode = fields >= 3 ? (savedDarkMode ? 1 : 0) : 1;
-    }
+    char extra;
+    int fields = fscanf(file, "%d %d %d %c", &savedTheme, &savedHints, &savedDarkMode, &extra);
+    int valid = fields == 3 &&
+        savedTheme >= 0 &&
+        savedTheme < (int)(sizeof(themes) / sizeof(themes[0])) &&
+        (savedHints == 0 || savedHints == 1) &&
+        (savedDarkMode == 0 || savedDarkMode == 1);
     fclose(file);
+
+    if (!valid)
+    {
+        remove(backupPath);
+        rename(configPath, backupPath);
+        themeIndex = 0;
+        hints = 1;
+        darkMode = 1;
+        statusSet("Invalid settings were backed up. Defaults loaded.");
+        return;
+    }
+
+    themeIndex = savedTheme;
+    hints = savedHints;
+    darkMode = savedDarkMode;
 }
 
 static void settingsSave(void)
 {
+    const char *configPath = "sdmc:/3ds/CINTENDO/config.ini";
+    const char *tempPath = "sdmc:/3ds/CINTENDO/config.ini.tmp";
     ensureFolders();
-    FILE *file = fopen("sdmc:/3ds/CINTENDO/config.ini", "w");
+
+    FILE *file = fopen(tempPath, "w");
     if (!file)
     {
-        statusSet("Could not save settings.");
+        statusSet("Could not create temporary settings file.");
         return;
     }
-    fprintf(file, "%d %d %d\n", themeIndex, hints, darkMode);
-    fclose(file);
+
+    int written = fprintf(file, "%d %d %d\n", themeIndex, hints, darkMode);
+    int ok = written > 0 && !ferror(file);
+    if (fclose(file) != 0)
+        ok = 0;
+
+    if (!ok || rename(tempPath, configPath) != 0)
+    {
+        remove(tempPath);
+        statusSet("Could not safely replace settings file.");
+        return;
+    }
+
     statusSet("Settings saved to SD card.");
 }
 
