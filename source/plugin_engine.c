@@ -49,8 +49,10 @@ static int readPluginLine(FILE *file, char *line, size_t lineSize)
 
 static int copyPluginField(char *destination, size_t destinationSize, const char *value)
 {
+    if (!destination || !value || destinationSize == 0)
+        return 0;
     size_t length = strlen(value);
-    if (!destination || !value || length == 0 || length >= destinationSize)
+    if (length == 0 || length >= destinationSize)
         return 0;
     memcpy(destination, value, length + 1);
     return 1;
